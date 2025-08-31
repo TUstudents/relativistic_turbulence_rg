@@ -1,10 +1,29 @@
 # Python-generated files
 __pycache__/
-*.py[oc]
+*.py[cod]
 build/
 dist/
 wheels/
 *.egg-info
 
 # Virtual environments
-.venv
+.venv/
+
+# Test and cache directories
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.benchmarks/
+
+# IDE directories
+.vscode/
+.claude/
+
+# Debug files
+debug_causality.py
+
+# Version files
+.python-version
+
+# Lock files
+uv.lock
