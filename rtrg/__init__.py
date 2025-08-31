@@ -46,12 +46,7 @@ __author__ = "Aristos"
 # Core modules
 from . import core, field_theory, israel_stewart, renormalization
 
-__all__ = [
-    "core",
-    "field_theory",
-    "israel_stewart",
-    "renormalization"
-]
+__all__ = ["core", "field_theory", "israel_stewart", "renormalization"]
 
 
 def main() -> None:
