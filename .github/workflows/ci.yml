@@ -211,12 +211,20 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Run Bandit security scan
-      run: |
-        pip install bandit[toml]
-        bandit -r rtrg/ -f sarif -o bandit-report.json || true
-        
-    - name: Upload security scan results
-      uses: github/codeql-action/upload-sarif@v3
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
       with:
-        sarif_file: bandit-report.json
+        python-version: '3.12'
+        
+    - name: Install Bandit 
+      run: pip install bandit 
+
+    - name: Run Bandit Scan
+      run: bandit -r rtrg/ -f json -o bandit-report.json
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: bandit-findings
+        path: bandit-report.json
