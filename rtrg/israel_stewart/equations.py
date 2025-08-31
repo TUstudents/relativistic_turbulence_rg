@@ -32,7 +32,7 @@ import sympy as sp
 
 from ..core.constants import PhysicalConstants
 from ..core.fields import FieldRegistry, Field
-from ..core.parameters import Parameters
+from ..core.parameters import ISParameters
 from ..core.tensors import LorentzTensor, Metric
 
 
