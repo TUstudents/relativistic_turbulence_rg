@@ -27,8 +27,7 @@ Project structure with:
 
 **Test**: 
 ```bash
-source .venv/bin/activate
-uv pip install -e . && python -c "import rtrg; print(rtrg.__version__)"
+uv pip install -e . && uv python -c "import rtrg; print(rtrg.__version__)"
 ```
 
 ---

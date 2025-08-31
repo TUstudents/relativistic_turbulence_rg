@@ -1,3 +1,3 @@
 """Numerical integration and optimization utilities"""
 
-__all__ = []
+__all__: list[str] = []

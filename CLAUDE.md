@@ -76,6 +76,7 @@ The project follows a modular scientific computing architecture organized around
 - plan/Israel-Stewart_Theory.md file contains the comprehensive theoretical foundation for the Israel-Stewart relativistic hydrodynamics
 - plan/MSRJD_Formalism.md file provides the theoretical foundation for implementing the field theory approach to relativistic turbulence analysis
 - plan/RG_Turbulence_Methods.md provides the methodological foundation for implementing the RG analysis
+- License is CC BY-NC-SA 4.0
 
 ### Git Commit Messages
 - **Short, technical summaries**: Max 50 characters for subject line

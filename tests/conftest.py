@@ -1,11 +1,13 @@
 """
 Pytest configuration and fixtures for the test suite
 """
-import pytest
-import numpy as np
-from typing import Generator
 
-from rtrg.core import Metric, ISParameters, FieldRegistry
+from collections.abc import Generator
+
+import numpy as np
+import pytest
+
+from rtrg.core import FieldRegistry, ISParameters, Metric
 from rtrg.core.constants import PhysicalConstants
 
 
@@ -15,10 +17,11 @@ def metric() -> Metric:
     return Metric(dimension=4, signature=(-1, 1, 1, 1))
 
 
-@pytest.fixture  
+@pytest.fixture
 def is_parameters() -> ISParameters:
     """Standard Israel-Stewart parameters for testing"""
     from rtrg.core.parameters import StandardParameterSets
+
     return StandardParameterSets.weakly_coupled_plasma(temperature=1.0)
 
 
@@ -48,16 +51,16 @@ def spatial_velocity() -> np.ndarray:
 def sample_shear_tensor(metric: Metric) -> np.ndarray:
     """Sample symmetric traceless shear tensor"""
     pi = np.zeros((4, 4))
-    
+
     # Make symmetric
     pi[1, 2] = pi[2, 1] = 0.1
     pi[1, 3] = pi[3, 1] = 0.05
     pi[2, 3] = pi[3, 2] = 0.02
-    
+
     # Make traceless by subtracting trace part
     trace = np.trace(pi)
     pi -= trace / 4 * np.eye(4)
-    
+
     return pi
 
 
@@ -68,11 +71,13 @@ def numerical_tolerance() -> float:
 
 
 # Test parameter sets for different scenarios
-@pytest.fixture(params=[
-    {'eta': 0.1, 'tau_pi': 0.01},
-    {'eta': 0.5, 'tau_pi': 0.001}, 
-    {'eta': 0.01, 'tau_pi': 0.1}
-])
+@pytest.fixture(
+    params=[
+        {"eta": 0.1, "tau_pi": 0.01},
+        {"eta": 0.5, "tau_pi": 0.001},
+        {"eta": 0.01, "tau_pi": 0.1},
+    ]
+)
 def parameter_variations(request) -> dict:
     """Various parameter combinations for testing robustness"""
     return request.param
@@ -84,7 +89,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "unit: Unit tests")
     config.addinivalue_line("markers", "integration: Integration tests")
     config.addinivalue_line("markers", "benchmark: Benchmark tests")
-    config.addinivalue_line("markers", "physics: Physics validation tests") 
+    config.addinivalue_line("markers", "physics: Physics validation tests")
     config.addinivalue_line("markers", "numerical: Numerical accuracy tests")
     config.addinivalue_line("markers", "slow: Slow tests")
 
@@ -94,7 +99,7 @@ def pytest_collection_modifyitems(config, items):
     """Modify test collection to handle slow tests"""
     if config.getoption("--run-slow"):
         return  # Don't skip anything if explicitly requested
-        
+
     skip_slow = pytest.mark.skip(reason="need --run-slow option to run")
     for item in items:
         if "slow" in item.keywords:
@@ -103,9 +108,4 @@ def pytest_collection_modifyitems(config, items):
 
 def pytest_addoption(parser):
     """Add command line options"""
-    parser.addoption(
-        "--run-slow", 
-        action="store_true", 
-        default=False, 
-        help="run slow tests"
-    )
+    parser.addoption("--run-slow", action="store_true", default=False, help="run slow tests")

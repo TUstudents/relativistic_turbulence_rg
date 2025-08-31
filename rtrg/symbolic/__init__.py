@@ -1,3 +1,3 @@
 """Symbolic computation utilities for field theory calculations"""
 
-__all__ = []
+__all__: list[str] = []
