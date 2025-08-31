@@ -1,2 +1,4 @@
 def main() -> None:
-    print("Hello from relativistic-turbulence-rg!")
+    """Entry point for the relativistic turbulence RG package"""
+    from rtrg import main as rtrg_main
+    rtrg_main()

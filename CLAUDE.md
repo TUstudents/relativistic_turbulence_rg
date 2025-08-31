@@ -73,3 +73,13 @@ The project follows a modular scientific computing architecture organized around
 - Heavy focus on symbolic computation for field theory calculations
 - Designed for extensibility with plugin-style architecture for different physical models
 - Implementation follows physics literature conventions for variable naming and mathematical notation
+- plan/Israel-Stewart_Theory.md file contains the comprehensive theoretical foundation for the Israel-Stewart relativistic hydrodynamics
+- plan/MSRJD_Formalism.md file provides the theoretical foundation for implementing the field theory approach to relativistic turbulence analysis
+- plan/RG_Turbulence_Methods.md provides the methodological foundation for implementing the RG analysis
+
+### Git Commit Messages
+- **Short, technical summaries**: Max 50 characters for subject line
+- **Concise descriptions**: Brief bullet points for multi-line commits
+- **Professional tone**: Avoid flowery language or excessive detail
+- **Action-oriented**: Start with imperative verbs (Fix, Add, Remove, Update)
+- **Technical standard**: Follow conventional commit format when applicable
