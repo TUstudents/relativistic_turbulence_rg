@@ -579,12 +579,16 @@ class HeatFluxField(Field):
         T = sp.Symbol("T")  # Temperature
         alpha = 1 / T  # Inverse temperature
 
+        # Create symbolic parameters
+        tau_q_sym = sp.Symbol("tau_q")
+        kappa_sym = sp.Symbol("kappa")
+
         # τ_q ∂_t q^μ + q^μ = -κ T ∇^μ α - τ_q q^μ θ + ...
         evolution = (
-            tau_q * sp.Derivative(self.symbol, t)
+            tau_q_sym * sp.Derivative(self.symbol, t)
             + self.symbol
-            + kappa * T * sp.Derivative(alpha, t)
-            + tau_q * self.symbol * theta
+            + kappa_sym * T * sp.Derivative(alpha, t)
+            + tau_q_sym * self.symbol * theta
         )
 
         return evolution

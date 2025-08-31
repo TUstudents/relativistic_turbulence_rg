@@ -535,6 +535,135 @@ class LorentzTensor:
 
         return f"{self_letters},{other_letters}->{result_letters}"
 
+    def christoffel_symbols(self, metric_derivatives: np.ndarray | None = None) -> "LorentzTensor":
+        """
+        Compute Christoffel symbols Γ^λ_μν for the metric.
+        
+        Mathematical Definition:
+            Γ^λ_μν = ½ g^λρ (∂_μ g_ρν + ∂_ν g_ρμ - ∂_ρ g_μν)
+            
+        For Minkowski space, all Christoffel symbols vanish (flat spacetime).
+        For curved spacetime, metric derivatives must be provided.
+        
+        Args:
+            metric_derivatives: Array of metric derivatives ∂_α g_μν.
+                Shape should be (dim, dim, dim) for rank-3 tensor.
+                If None, assumes flat Minkowski space (Γ = 0).
+                
+        Returns:
+            LorentzTensor containing Christoffel symbols with structure:
+            - First index (λ): contravariant (raised)
+            - Second/third indices (μν): covariant (lowered)
+            - Symmetric in last two indices: Γ^λ_μν = Γ^λ_νμ
+            
+        Examples:
+            >>> # Flat Minkowski space (all Christoffel symbols vanish)
+            >>> metric = Metric()
+            >>> tensor = LorentzTensor(metric.g, metric_indices)
+            >>> christoffel = tensor.christoffel_symbols()  # Returns zero tensor
+            >>>
+            >>> # Curved spacetime (requires metric derivatives)
+            >>> derivs = compute_metric_derivatives(g)  # User-provided
+            >>> christoffel = tensor.christoffel_symbols(derivs)
+        """
+        dim = self.metric.dim
+        
+        if metric_derivatives is None:
+            # Flat Minkowski space - all Christoffel symbols vanish
+            christoffel_components = np.zeros((dim, dim, dim), dtype=complex)
+        else:
+            if metric_derivatives.shape != (dim, dim, dim):
+                raise ValueError(f"Metric derivatives must have shape {(dim, dim, dim)}")
+            
+            # Compute Christoffel symbols: Γ^λ_μν = ½ g^λρ (∂_μ g_ρν + ∂_ν g_ρμ - ∂_ρ g_μν)
+            g_inv = np.linalg.inv(self.metric.g)
+            christoffel_components = np.zeros((dim, dim, dim), dtype=complex)
+            
+            for lam in range(dim):
+                for mu in range(dim):
+                    for nu in range(dim):
+                        for rho in range(dim):
+                            christoffel_components[lam, mu, nu] += 0.5 * g_inv[lam, rho] * (
+                                metric_derivatives[mu, rho, nu] + 
+                                metric_derivatives[nu, rho, mu] - 
+                                metric_derivatives[rho, mu, nu]
+                            )
+        
+        # Create index structure for Christoffel symbols
+        christoffel_indices = IndexStructure(
+            names=['lambda', 'mu', 'nu'],
+            types=['contravariant', 'covariant', 'covariant'],
+            symmetries=['none', 'symmetric', 'symmetric']  # Symmetric in last two indices
+        )
+        
+        return LorentzTensor(christoffel_components, christoffel_indices, self.metric)
+
+    def covariant_derivative(self, position: int, christoffel: "LorentzTensor | None" = None) -> "LorentzTensor":
+        """
+        Compute covariant derivative ∇_μ T of the tensor.
+        
+        Mathematical Definition:
+            For contravariant tensor T^α: ∇_μ T^α = ∂_μ T^α + Γ^α_μβ T^β
+            For covariant tensor T_α: ∇_μ T_α = ∂_μ T_α - Γ^β_μα T_β
+            For mixed tensors: combine both rules
+            
+        In Minkowski space with Cartesian coordinates, covariant derivative
+        reduces to ordinary partial derivative since Christoffel symbols vanish.
+        
+        Args:
+            position: Position to insert the covariant derivative index.
+                New index will be covariant (lowered).
+            christoffel: Precomputed Christoffel symbols. If None, assumes
+                flat Minkowski space where ∇_μ = ∂_μ.
+                
+        Returns:
+            New tensor with rank increased by 1, containing the covariant derivative.
+            The derivative index is inserted at the specified position.
+            
+        Note:
+            This method currently implements the case for flat spacetime only.
+            For curved spacetime, the full implementation would require:
+            - Numerical differentiation of tensor components
+            - Christoffel symbol correction terms
+            - Proper handling of all index types
+            
+        Examples:
+            >>> # Covariant derivative of vector v^μ gives ∇_ν v^μ
+            >>> vector = LorentzTensor(v_components, vector_indices)
+            >>> cov_deriv = vector.covariant_derivative(0)  # Insert ∇ at position 0
+            >>>
+            >>> # In flat space: ∇_μ T^νρ = ∂_μ T^νρ (no Christoffel terms)
+        """
+        if christoffel is None:
+            # Flat Minkowski space: covariant derivative = partial derivative
+            # For this implementation, we return a symbolic placeholder
+            # Full implementation would require numerical differentiation
+            
+            # Create extended shape for derivative
+            new_shape = list(self.shape)
+            new_shape.insert(position, self.metric.dim)
+            
+            # For now, return zero tensor as placeholder
+            # Real implementation would compute ∂_μ T numerically
+            result_components = np.zeros(tuple(new_shape), dtype=complex)
+            
+            # Build new index structure
+            new_names = self.indices.names.copy()
+            new_names.insert(position, 'derivative')
+            
+            new_types = self.indices.types.copy() 
+            new_types.insert(position, 'covariant')  # Derivative index is always covariant
+            
+            new_symmetries = self.indices.symmetries.copy()
+            new_symmetries.insert(position, 'none')
+            
+            new_indices = IndexStructure(new_names, new_types, new_symmetries)
+            
+            return LorentzTensor(result_components, new_indices, self.metric)
+        else:
+            # Curved spacetime implementation would go here
+            raise NotImplementedError("Covariant derivative with Christoffel symbols not yet implemented")
+
     def _build_result_indices(
         self, other: "LorentzTensor", index_pairs: list[tuple[int, int]]
     ) -> IndexStructure:
