@@ -214,10 +214,9 @@ jobs:
     - name: Run Bandit security scan
       run: |
         pip install bandit[toml]
-        bandit -r rtrg/ -f json -o bandit-report.json || true
+        bandit -r rtrg/ -f sarif -o bandit-report.json || true
         
     - name: Upload security scan results
       uses: github/codeql-action/upload-sarif@v3
-      if: always()
       with:
         sarif_file: bandit-report.json
