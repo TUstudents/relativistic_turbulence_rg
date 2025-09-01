@@ -244,7 +244,10 @@ class ActionExpander:
             Dictionary mapping order to symbolic expression
         """
         if max_order in self.expansion_cache:
-            return dict(self.expansion_cache)
+            # Return dictionary with all orders up to max_order
+            return {
+                order: expr for order, expr in self.expansion_cache.items() if order <= max_order
+            }
 
         # Taylor expansion around background
         expansion = {}

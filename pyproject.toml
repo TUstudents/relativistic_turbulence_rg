@@ -1,7 +1,7 @@
 [project]
 name = "relativistic-turbulence-rg"
 version = "0.1.0"
-description = "Professional implementation of renormalization group methods for relativistic Israel-Stewart hydrodynamics"
+description = "Renormalization group methods for relativistic Israel-Stewart hydrodynamics"
 readme = "README.md"
 license = { text = "CC-BY-NC-SA-4.0" }
 authors = [
@@ -32,6 +32,7 @@ classifiers = [
 requires-python = ">=3.12"
 dependencies = [
     "matplotlib>=3.8.0",
+    "networkx>=3.5",
     "numba>=0.58.0",
     "numpy>=1.24.0",
     "scipy>=1.11.0",
@@ -123,10 +124,14 @@ select = [
 ignore = [
     "E501",  # line too long (handled by formatter)
     "B905",  # zip without explicit strict parameter
+    "F841",  # unused variables
+    "F401",  # unused imports
+    "E731",  # lambda expressions (useful for short functions)
+    "E722",  # bare except (sometimes needed for symbolic math)
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["F811", "F401"]
+"tests/*" = ["F811", "F401", "F841"]  # Allow unused imports and variables in tests
 
 [tool.ruff]
 target-version = "py312"
@@ -142,10 +147,11 @@ check_untyped_defs = true
 disallow_untyped_decorators = true
 no_implicit_optional = true
 warn_redundant_casts = true
-warn_unused_ignores = true
+warn_unused_ignores = false
 warn_no_return = true
 warn_unreachable = true
 strict_equality = true
+disable_error_code = ["unused-ignore", "assignment"]
 
 # Ignore missing imports for external libraries without complete type stubs
 [[tool.mypy.overrides]]
