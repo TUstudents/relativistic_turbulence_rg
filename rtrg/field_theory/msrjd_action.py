@@ -231,7 +231,7 @@ class ActionExpander:
         self.action = action_expr
         self.fields = fields
         self.background = background
-        self.expansion_cache: dict[int, sp.Expr] = {}
+        self.expansion_cache: dict[int, dict[int, sp.Expr]] = {}
 
     def expand_to_order(self, max_order: int) -> dict[int, sp.Expr]:
         """
@@ -244,13 +244,12 @@ class ActionExpander:
             Dictionary mapping order to symbolic expression
         """
         if max_order in self.expansion_cache:
-            # Return dictionary with all orders up to max_order
-            return {
-                order: expr for order, expr in self.expansion_cache.items() if order <= max_order
-            }
+            # Return the cached expansion for this max_order
+            cached_expansion: dict[int, sp.Expr] = self.expansion_cache[max_order]
+            return cached_expansion
 
         # Taylor expansion around background
-        expansion = {}
+        expansion: dict[int, sp.Expr] = {}
 
         # Zeroth order: background action
         # Create substitution dictionary mapping symbols to background values
