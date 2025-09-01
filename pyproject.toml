@@ -9,7 +9,7 @@ authors = [
 ]
 keywords = [
     "physics",
-    "relativity", 
+    "relativity",
     "hydrodynamics",
     "turbulence",
     "renormalization-group",
@@ -21,7 +21,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "License :: Other/Proprietary License",
-    "Operating System :: OS Independent", 
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -81,7 +81,7 @@ packages = ["rtrg"]
 [tool.hatch.build.targets.sdist]
 include = [
     "rtrg/",
-    "tests/", 
+    "tests/",
     "docs/",
     "plan/",
     "README.md",
@@ -104,7 +104,7 @@ addopts = [
 markers = [
     "unit: Unit tests for individual components",
     "integration: Integration tests for component interactions",
-    "benchmark: Benchmark tests against known results", 
+    "benchmark: Benchmark tests against known results",
     "slow: Tests that take more than a few seconds",
     "physics: Tests that validate physics correctness",
     "numerical: Tests for numerical accuracy and stability",
@@ -113,7 +113,7 @@ markers = [
 [tool.ruff.lint]
 select = [
     "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings  
+    "W",  # pycodestyle warnings
     "F",  # pyflakes
     "I",  # isort
     "B",  # flake8-bugbear
@@ -147,6 +147,17 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 
+# Ignore missing imports for external libraries without complete type stubs
+[[tool.mypy.overrides]]
+module = [
+    "sympy.*",
+    "matplotlib.*",
+    "scipy.*",
+    "numba.*",
+    "networkx.*",
+]
+ignore_missing_imports = true
+
 [tool.coverage.run]
 source = ["rtrg"]
 omit = [
@@ -161,4 +172,12 @@ exclude_lines = [
     "raise AssertionError",
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", "benchmarks"]
+skips = [
+    "B101",  # assert_used - asserts are OK in tests
+    "B601",  # paramiko_calls - not applicable
+    "B602",  # subprocess_popen_with_shell_equals_true - we don't use shell=True
 ]

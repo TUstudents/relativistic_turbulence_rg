@@ -39,12 +39,48 @@ uv run pytest tests/benchmarks/
 # Run linting (when configured)
 uv run ruff check
 
-# Format code (when configured) 
+# Format code (when configured)
 uv run ruff format
 
-# Type checking (when configured)
-uv run mypy src/
+# Type checking
+uv run mypy rtrg/
+
+# Run all pre-commit hooks manually
+uv run pre-commit run --all-files
+
+# Run specific pre-commit hook
+uv run pre-commit run ruff --all-files
+uv run pre-commit run mypy --all-files
 ```
+
+### Pre-commit Hooks
+Pre-commit hooks are configured to automatically run code quality checks on every commit:
+
+```bash
+# Install pre-commit hooks (already done)
+uv run pre-commit install
+
+# Run hooks on all files
+uv run pre-commit run --all-files
+
+# Skip hooks for emergency commits
+git commit --no-verify -m "emergency fix"
+
+# Update hook versions
+uv run pre-commit autoupdate
+```
+
+**Configured hooks:**
+- **ruff**: Fast Python linting and formatting (replaces flake8, isort, black)
+- **mypy**: Static type checking with strict configuration
+- **trailing-whitespace**: Remove trailing whitespace
+- **end-of-file-fixer**: Ensure files end with newline
+- **check-yaml/toml/json**: Validate syntax of configuration files
+- **check-merge-conflict**: Prevent committing merge conflict markers
+- **bandit**: Security vulnerability scanning
+- **debug-statements**: Check for leftover debug imports/statements
+
+The hooks use existing configurations from `pyproject.toml` and run efficiently on changed files.
 
 ## Project Architecture
 

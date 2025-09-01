@@ -26,6 +26,7 @@ References:
 """
 
 from dataclasses import dataclass
+from typing import cast
 
 import sympy as sp
 
@@ -161,11 +162,13 @@ class IsraelStewartSystem:
         self.field_registry.create_is_fields(self.metric)
 
         # Extract individual fields for convenience (these are guaranteed to exist after create_is_fields)
-        self.rho: EnergyDensityField = self.field_registry.get_field("rho")
-        self.u: FourVelocityField = self.field_registry.get_field("u")
-        self.pi: ShearStressField = self.field_registry.get_field("pi")
-        self.Pi: BulkPressureField = self.field_registry.get_field("Pi")
-        self.q: HeatFluxField = self.field_registry.get_field("q")
+        self.rho: EnergyDensityField = cast(
+            EnergyDensityField, self.field_registry.get_field("rho")
+        )
+        self.u: FourVelocityField = cast(FourVelocityField, self.field_registry.get_field("u"))
+        self.pi: ShearStressField = cast(ShearStressField, self.field_registry.get_field("pi"))
+        self.Pi: BulkPressureField = cast(BulkPressureField, self.field_registry.get_field("Pi"))
+        self.q: HeatFluxField = cast(HeatFluxField, self.field_registry.get_field("q"))
 
         # Create symbolic variables for spacetime coordinates
         self.t, self.x, self.y, self.z = sp.symbols("t x y z")
