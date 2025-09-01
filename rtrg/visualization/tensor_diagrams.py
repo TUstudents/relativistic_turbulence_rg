@@ -65,7 +65,7 @@ def visualize_tensor_network(
     fig, ax = plt.subplots(figsize=figsize)
 
     # Create networkx graph
-    G = nx.Graph()
+    G: nx.Graph = nx.Graph()
 
     # Add tensor nodes
     tensor_positions = {}
@@ -561,7 +561,7 @@ def plot_field_hierarchy(
     fig, ax = plt.subplots(figsize=figsize)
 
     # Create hierarchical graph
-    G = nx.DiGraph()
+    G: nx.DiGraph = nx.DiGraph()
 
     # Add nodes for physical fields and their properties
     field_positions = {}
