@@ -11,7 +11,7 @@ This is a Python library for applying Renormalization Group (RG) methods to anal
 
 ### Key Technologies
 - **Language:** Python 3.12+
-- **Dependencies:** 
+- **Dependencies:**
   - Scientific computing: `numpy`, `scipy`, `sympy`
   - Performance: `numba`
   - Visualization: `matplotlib`

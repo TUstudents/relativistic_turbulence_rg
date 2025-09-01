@@ -1944,14 +1944,12 @@ all = [
     { name = "ruff" },
     { name = "sphinx" },
     { name = "sphinx-rtd-theme" },
-    { name = "types-networkx" },
 ]
 dev = [
     { name = "black" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "ruff" },
-    { name = "types-networkx" },
 ]
 docs = [
     { name = "jupyter" },
@@ -1987,7 +1985,6 @@ requires-dist = [
     { name = "sphinx-rtd-theme", marker = "extra == 'docs'", specifier = ">=1.3.0" },
     { name = "sympy", specifier = ">=1.12.0" },
     { name = "tqdm", specifier = ">=4.65.0" },
-    { name = "types-networkx", marker = "extra == 'dev'", specifier = ">=3.0.0" },
 ]
 provides-extras = ["dev", "test", "docs", "all"]
 
@@ -2453,18 +2450,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/eb/79/72064e6a701c2183016abbbfedaba506d81e30e232a68c9f0d6f6fcd1574/traitlets-5.14.3.tar.gz", hash = "sha256:9ed0579d3502c94b4b3732ac120375cda96f923114522847de4b3bb98b96b6b7", size = 161621, upload-time = "2024-04-19T11:11:49.746Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/c0/8f5d070730d7836adc9c9b6408dec68c6ced86b304a9b26a14df072a6e8c/traitlets-5.14.3-py3-none-any.whl", hash = "sha256:b74e89e397b1ed28cc831db7aea759ba6640cb3de13090ca145426688ff1ac4f", size = 85359, upload-time = "2024-04-19T11:11:46.763Z" },
-]
-
-[[package]]
-name = "types-networkx"
-version = "3.5.0.20250830"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/13/52/c3d73e4a9bfef208edee9597c0e5cc1043e9b4088bacc46753d9049828de/types_networkx-3.5.0.20250830.tar.gz", hash = "sha256:bc08319f81116bb235ccdb2442a21b5d425bc643d26e834c4071cb43040e28b6", size = 71249, upload-time = "2025-08-30T02:49:34.404Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/7b/440e08353d4c78c39fc17090f5ea9dae7b69c3430b3e71e0486d55e0e4d9/types_networkx-3.5.0.20250830-py3-none-any.whl", hash = "sha256:6579f372a7ab5713b23b093fc3185a1eba7a86b6abfd7c1c2a6603ce4b4f562d", size = 159128, upload-time = "2025-08-30T02:49:33.162Z" },
 ]
 
 [[package]]

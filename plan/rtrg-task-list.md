@@ -25,7 +25,7 @@ Project structure with:
 
 **Output**: Installable Python package `rtrg`
 
-**Test**: 
+**Test**:
 ```bash
 uv pip install -e . && uv python -c "import rtrg; print(rtrg.__version__)"
 ```
@@ -52,7 +52,7 @@ class LorentzTensor:
     - trace() -> scalar or LorentzTensor
 ```
 
-**Output**: 
+**Output**:
 - Tensor objects with automatic index management
 - Covariant derivative operations
 
@@ -92,7 +92,7 @@ class Field:
     engineering_dimension: float
     canonical_dimension: float
     constraints: List[Constraint]
-    
+
 class ResponseField(Field):
     """MSRJD response field $\tilde{\phi}$"""
     physical_field: Field
@@ -137,18 +137,18 @@ class IsraelStewartEquations:
     def __init__(self, parameters: ISParameters):
         self.setup_thermodynamics()
         self.setup_kinematics()
-        
+
     def stress_energy_tensor(self) -> SymbolicTensor:
         """Construct T^{μν}"""
-        
+
     def conservation_laws(self) -> List[SymbolicEquation]:
         """∂_μ T^{μν} = 0"""
-        
+
     def relaxation_equations(self) -> Dict[str, SymbolicEquation]:
         """Relaxation for π^{μν}, Π, q^μ"""
 ```
 
-**Output**: 
+**Output**:
 - Symbolic IS equation system
 - Parameter dependency graph
 
@@ -181,18 +181,18 @@ $$\tau_{\pi}\partial_t\delta\pi^{ij} + \delta\pi^{ij} = 2\eta\nabla^{(i}\delta v
 class LinearizedIS:
     def __init__(self, background_state: Dict):
         self.background = background_state
-        
+
     def linearize_field(self, field: Field) -> LinearField:
         """φ = φ_0 + δφ"""
-        
+
     def dispersion_relation(self, k: float, mode: str) -> complex:
         """ω(k) for different modes"""
-        
+
     def characteristic_polynomial(self, omega, k) -> Polynomial:
         """Det[M(ω,k)] = 0"""
 ```
 
-**Output**: 
+**Output**:
 - Dispersion relations ω(k)
 - Stability analysis results
 
@@ -230,18 +230,18 @@ class MSRJDAction:
     def __init__(self, is_system: IsraelStewartSystem):
         self.deterministic_part = self.build_deterministic_action()
         self.noise_part = self.build_noise_action()
-        
+
     def build_deterministic_action(self) -> SymbolicAction:
         """Construct S_det from IS equations"""
-        
+
     def build_noise_action(self) -> SymbolicAction:
         """Construct S_noise with FDT-consistent correlators"""
-        
+
     def expand_in_fields(self, order: int) -> Dict[int, SymbolicExpression]:
         """Taylor expand to given order"""
 ```
 
-**Output**: 
+**Output**:
 - Symbolic action S[φ, φ̃]
 - Expansion coefficients for vertices
 
@@ -275,19 +275,19 @@ $$G^R_{\pi^{ij}\pi^{kl}}(\omega, k) = \frac{2\eta P^{TT}_{ijkl}}{1 - i\omega\tau
 class PropagatorCalculator:
     def __init__(self, quadratic_action: QuadraticAction):
         self.G_inv = self.construct_inverse_propagator_matrix()
-        
-    def calculate_propagator(self, field1: Field, field2: Field, 
+
+    def calculate_propagator(self, field1: Field, field2: Field,
                             omega: complex, k: np.ndarray) -> complex:
         """G_12(ω, k)"""
-        
+
     def retarded_propagator(self, omega, k) -> np.ndarray:
         """G^R(ω, k) matrix"""
-        
+
     def keldysh_propagator(self, omega, k, temperature) -> np.ndarray:
         """G^K(ω, k, T) with FDT"""
 ```
 
-**Output**: 
+**Output**:
 - Propagator matrices G^R, G^A, G^K
 - Spectral functions
 
@@ -323,18 +323,18 @@ def plot_propagator_spectrum():
 class VertexExtractor:
     def __init__(self, action: MSRJDAction):
         self.vertices = {}
-        
+
     def extract_cubic_vertices(self) -> Dict[str, Vertex]:
         """All 3-point interactions"""
-        
+
     def extract_quartic_vertices(self) -> Dict[str, Vertex]:
         """All 4-point interactions"""
-        
+
     def vertex_tensor_structure(self, vertex: Vertex) -> TensorStructure:
         """Lorentz structure of vertex"""
 ```
 
-**Output**: 
+**Output**:
 - Vertex catalog with Feynman rules
 - Coupling constants
 
@@ -367,18 +367,18 @@ def draw_feynman_vertices():
 class DiagramGenerator:
     def __init__(self, vertices: Dict, propagators: Dict):
         self.diagrams = []
-        
+
     def generate_one_loop_diagrams(self, external_legs: List) -> List[Diagram]:
         """All 1-loop diagrams with given external legs"""
-        
+
     def compute_symmetry_factor(self, diagram: Diagram) -> float:
         """Combinatorial factor"""
-        
+
     def is_one_particle_irreducible(self, diagram: Diagram) -> bool:
         """Check if 1PI"""
 ```
 
-**Output**: 
+**Output**:
 - List of Feynman diagrams
 - Symmetry factors
 
@@ -410,20 +410,20 @@ $$\int_{-\infty}^{\infty} \frac{d\omega}{2\pi} \frac{1}{(-i\omega + a)(-i\omega 
 class LoopIntegrator:
     def __init__(self, cutoff: float, method: str = 'wilsonian'):
         self.cutoff = cutoff
-        
+
     def integrate_frequency(self, integrand: Expression) -> Expression:
         """Residue theorem for ω integration"""
-        
-    def integrate_momentum_shell(self, integrand: Callable, 
+
+    def integrate_momentum_shell(self, integrand: Callable,
                                  Lambda: float, b: float) -> float:
         """∫_{Λ/b}^{Λ} d³q q² f(q)"""
-        
-    def regularize_divergence(self, integral: float, 
+
+    def regularize_divergence(self, integral: float,
                              regulator: str) -> float:
         """Handle UV/IR divergences"""
 ```
 
-**Output**: 
+**Output**:
 - One-loop corrections δη, δτ, δg
 - Anomalous dimensions γ_i
 
@@ -455,18 +455,18 @@ $$\beta_{\tau} = \tau(-z + \gamma_{\tau})$$
 class BetaFunctionExtractor:
     def __init__(self, one_loop_corrections: Dict):
         self.corrections = one_loop_corrections
-        
+
     def extract_anomalous_dimension(self, field: str) -> float:
         """γ = -d ln Z/d ln μ"""
-        
+
     def construct_beta_function(self, coupling: str) -> Callable:
         """β(g) from corrections"""
-        
+
     def verify_ward_identities(self) -> bool:
         """Check gauge invariance"""
 ```
 
-**Output**: 
+**Output**:
 - Beta functions β_i(g_j)
 - Anomalous dimensions γ_i
 
@@ -498,18 +498,18 @@ $$\frac{dg_i}{d\ell} = \beta_i(g_1, ..., g_n)$$
 class RGFlowIntegrator:
     def __init__(self, beta_functions: Dict[str, Callable]):
         self.beta = beta_functions
-        
+
     def integrate_flow(self, initial: Dict, l_max: float) -> Trajectory:
         """Solve dg/dl = β(g)"""
-        
+
     def find_separatrices(self) -> List[Trajectory]:
         """Critical trajectories between basins"""
-        
+
     def compute_basin_of_attraction(self, fixed_point: Dict) -> Region:
         """Parameter region flowing to FP"""
 ```
 
-**Output**: 
+**Output**:
 - Flow trajectories g_i(ℓ)
 - Basin boundaries
 
@@ -540,18 +540,18 @@ $$\beta_i(g_*) = 0 \quad \forall i$$
 class FixedPointAnalyzer:
     def __init__(self, beta_functions: Dict):
         self.beta = beta_functions
-        
+
     def find_fixed_points(self, initial_guesses: List) -> List[FixedPoint]:
         """Solve β(g*) = 0"""
-        
+
     def linear_stability_analysis(self, fp: FixedPoint) -> StabilityResult:
         """Eigenvalues of ∂β_i/∂g_j"""
-        
+
     def classify_fixed_point(self, fp: FixedPoint) -> str:
         """UV/IR attractive, saddle, etc."""
 ```
 
-**Output**: 
+**Output**:
 - Fixed point locations g*
 - Stability eigenvalues λ_i
 - Critical exponents
@@ -585,18 +585,18 @@ class UniversalExponents:
     def __init__(self, fixed_point: FixedPoint, stability: StabilityResult):
         self.fp = fixed_point
         self.stability = stability
-        
+
     def correlation_length_exponent(self) -> float:
         """ν from relevant eigenvalue"""
-        
+
     def dynamic_exponent(self) -> float:
         """z from anomalous dimensions"""
-        
+
     def structure_function_exponents(self, n: int) -> float:
         """ζ_n for S_n(r) ~ r^{ζ_n}"""
 ```
 
-**Output**: 
+**Output**:
 - Universal exponents ν, z, ζ_n
 - Amplitude ratios
 
@@ -630,18 +630,18 @@ def plot_scaling_exponents():
 class NonRelativisticLimit:
     def __init__(self, relativistic_fp: FixedPoint):
         self.rel_fp = relativistic_fp
-        
+
     def scale_parameters_with_c(self, c: float) -> Dict:
         """Transform parameters for given c"""
-        
+
     def extrapolate_to_infinity(self, c_values: np.ndarray) -> Dict:
         """Richardson extrapolation c→∞"""
-        
+
     def compute_nr_exponents(self) -> Dict:
         """Non-relativistic scaling exponents"""
 ```
 
-**Output**: 
+**Output**:
 - NR fixed point parameters
 - NR scaling exponents
 
@@ -673,18 +673,18 @@ def plot_c_limit_convergence():
 class TurbulencePredictions:
     def __init__(self, nr_limit: NonRelativisticLimit):
         self.exponents = nr_limit.compute_nr_exponents()
-        
+
     def energy_spectrum(self, k: np.ndarray, epsilon: float) -> np.ndarray:
         """E(k) with corrections"""
-        
+
     def structure_functions(self, r: np.ndarray, n: int) -> np.ndarray:
         """S_n(r) scaling"""
-        
+
     def probability_distributions(self, r: float) -> PDF:
         """PDF of velocity increments"""
 ```
 
-**Output**: 
+**Output**:
 - Scaling functions
 - Universal constants
 - Correction terms
@@ -721,18 +721,18 @@ def plot_energy_spectrum_comparison():
 class ValidationSuite:
     def __init__(self, results: Dict):
         self.results = results
-        
+
     def test_analytical_limits(self) -> TestReport:
         """Check known analytical results"""
-        
+
     def compare_with_dns(self, dns_data: Dataset) -> Comparison:
         """Statistical comparison with DNS"""
-        
+
     def benchmark_performance(self) -> BenchmarkReport:
         """Computational performance metrics"""
 ```
 
-**Output**: 
+**Output**:
 - Validation report
 - Error analysis
 - Performance metrics
@@ -767,15 +767,15 @@ def create_validation_dashboard():
 class DocumentationBuilder:
     def generate_api_docs(self) -> None:
         """Auto-generate from docstrings"""
-        
+
     def create_tutorials(self) -> None:
         """Jupyter notebook tutorials"""
-        
+
     def build_theory_guide(self) -> None:
         """LaTeX → PDF theory manual"""
 ```
 
-**Output**: 
+**Output**:
 - Complete documentation
 - Interactive tutorials
 - Theory manual
@@ -805,15 +805,15 @@ def create_interactive_explorer():
 class PublicationPreparation:
     def generate_figures(self) -> Dict[str, Figure]:
         """Publication-quality figures"""
-        
+
     def create_data_archive(self) -> Archive:
         """Zenodo-ready data package"""
-        
+
     def format_tables(self) -> Dict[str, Table]:
         """LaTeX tables of results"""
 ```
 
-**Output**: 
+**Output**:
 - Paper manuscript
 - Figure collection
 - Data archive

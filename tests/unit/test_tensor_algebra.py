@@ -378,9 +378,7 @@ class TestPhysicalInvariants:
 
         # Energy density: T^μν u_μ u_ν / c² should equal rho
         u_covariant = self.metric.g @ u
-        (
-            np.einsum("mu,mu", T, np.outer(u_covariant, u_covariant)) / PhysicalConstants.c**2
-        )
+        (np.einsum("mu,mu", T, np.outer(u_covariant, u_covariant)) / PhysicalConstants.c**2)
 
         # This is a more complex calculation, but should relate to rho
         # For perfect fluid in rest frame, this relation should hold

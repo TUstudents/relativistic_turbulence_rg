@@ -21,7 +21,7 @@ Israel-Stewart theory is based on Extended Irreversible Thermodynamics (EIT), wh
 
 **Fundamental Variables:**
 - **Primary thermodynamic variables**: $\rho$ (rest-frame energy density), $n$ (particle density), $u^\mu$ (four-velocity)
-- **Dissipative fluxes**: 
+- **Dissipative fluxes**:
   - $\Pi$ (bulk viscous pressure)
   - $\pi^{\mu\nu}$ (shear stress tensor)
   - $q^\mu$ (heat flux vector)
@@ -79,7 +79,7 @@ where:
 
 The full IS equations include numerous higher-order coupling terms:
 
-$$\tau_\pi \dot{\pi}^{\langle\mu\nu\rangle} + \pi^{\mu\nu} = 2\eta\sigma^{\mu\nu} - \tau_\pi\pi^{\mu\nu}\theta 
+$$\tau_\pi \dot{\pi}^{\langle\mu\nu\rangle} + \pi^{\mu\nu} = 2\eta\sigma^{\mu\nu} - \tau_\pi\pi^{\mu\nu}\theta
 + \lambda_{\pi\Pi}\Pi\sigma^{\mu\nu} + \lambda_{\pi q}q^{\langle\mu}\nabla^{\nu\rangle}\alpha
 - \tau_{\pi\pi}\pi^{\langle\mu}_\lambda\sigma^{\nu\rangle\lambda} + \lambda_{qq}q^{\langle\mu}q^{\nu\rangle}$$
 

@@ -156,7 +156,7 @@ $$V^{(4)}_{\pi\pi uu} = \text{tensor structure encoding } \pi^2 \text{ contribut
 
 ### 3.4 Feynman Diagram Rules
 
-1. **Lines:** 
+1. **Lines:**
    - Solid lines = physical field propagators
    - Dashed lines = response field propagators
    - Wavy lines = noise correlators
@@ -246,16 +246,16 @@ class MSRJDCalculator:
     def __init__(self, theory='Israel-Stewart'):
         self.fields = self.define_fields()
         self.action = self.construct_action()
-        
+
     def construct_action(self):
         S_quad = self.quadratic_action()
         S_int = self.interaction_action()
         return S_quad + S_int
-    
+
     def derive_propagators(self):
         G_inv = self.inverse_propagator_matrix()
         return invert_matrix(G_inv)
-    
+
     def calculate_one_loop(self, diagram_type):
         # Symbolic integration
         integrand = self.construct_integrand(diagram_type)
@@ -276,7 +276,7 @@ def momentum_shell_integral(integrand, Lambda, b):
         # Angular average
         angular_avg = angular_integration(integrand, q_mag)
         return q_mag**2 * angular_avg
-    
+
     result, error = quad(spherical_integral, Lambda/b, Lambda)
     return result
 ```

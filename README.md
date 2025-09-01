@@ -8,7 +8,7 @@ Professional implementation of renormalization group methods for relativistic Is
 ## Features
 
 - **Lorentz Tensor Algebra**: Complete tensor system with automatic index management
-- **Israel-Stewart Fields**: Field definitions with constraint validation 
+- **Israel-Stewart Fields**: Field definitions with constraint validation
 - **Parameter Management**: Physical parameter validation with causality checks
 - **Natural Units**: Full support for natural unit systems (c =  = k_B = 1)
 - **Extensible Architecture**: Modular design for field theory calculations

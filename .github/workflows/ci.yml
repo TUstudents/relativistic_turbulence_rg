@@ -30,22 +30,22 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.12', '3.13']
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
-        
+
     - name: Install uv
       uses: astral-sh/setup-uv@v2
       with:
         enable-cache: true
         cache-dependency-glob: "uv.lock"
-        
+
     - name: Cache dependencies
       uses: actions/cache@v3
       with:
@@ -53,36 +53,36 @@ jobs:
         key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
         restore-keys: |
           ${{ runner.os }}-uv-
-          
+
     - name: Install dependencies
       run: |
         uv sync --all-extras --dev
-        
+
     - name: Verify installation
       run: |
         uv run python -c "import rtrg; print(f'rtrg v{rtrg.__version__}')"
-        
+
     - name: Run code quality checks
       run: |
         uv run ruff check --output-format=github
         uv run ruff format --check
-        
+
     - name: Run type checking
       run: |
         uv run mypy rtrg/ --show-error-codes
-        
+
     - name: Run unit tests
       run: |
         uv run pytest tests/unit/ -v --tb=short -m "not slow"
-        
+
     - name: Run integration tests
       run: |
         uv run pytest tests/integration/ -v --tb=short
-        
+
     - name: Run physics validation tests
       run: |
         uv run pytest -v --tb=short -m "physics"
-        
+
     - name: Run numerical accuracy tests
       run: |
         uv run pytest -v --tb=short -m "numerical"
@@ -91,30 +91,30 @@ jobs:
     name: Coverage Report
     runs-on: ubuntu-latest
     needs: test
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up Python 3.12
       uses: actions/setup-python@v4
       with:
         python-version: '3.12'
-        
+
     - name: Install uv
       uses: astral-sh/setup-uv@v2
       with:
         enable-cache: true
         cache-dependency-glob: "uv.lock"
-        
+
     - name: Install dependencies
       run: |
         uv sync --all-extras --dev
-        
+
     - name: Run tests with coverage
       run: |
         uv run pytest --cov=rtrg --cov-report=xml --cov-report=html --cov-fail-under=70
-        
+
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
       with:
@@ -126,30 +126,30 @@ jobs:
     name: Performance Benchmarks
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up Python 3.12
       uses: actions/setup-python@v4
       with:
         python-version: '3.12'
-        
+
     - name: Install uv
       uses: astral-sh/setup-uv@v2
       with:
         enable-cache: true
         cache-dependency-glob: "uv.lock"
-        
+
     - name: Install dependencies
       run: |
         uv sync --all-extras --dev
-        
+
     - name: Run benchmark tests
       run: |
         uv run pytest tests/benchmarks/ -v --benchmark-only --benchmark-json=benchmark.json
-        
+
     - name: Store benchmark results
       uses: benchmark-action/github-action-benchmark@v1
       if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
@@ -165,38 +165,38 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
     timeout-minutes: 60
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up Python 3.12
       uses: actions/setup-python@v4
       with:
         python-version: '3.12'
-        
+
     - name: Install uv
       uses: astral-sh/setup-uv@v2
       with:
         enable-cache: true
         cache-dependency-glob: "uv.lock"
-        
+
     - name: Install dependencies
       run: |
         uv sync --all-extras --dev
-        
+
     - name: Run comprehensive test suite
       run: |
         uv run pytest -v --tb=long --durations=20
-        
+
     - name: Run slow/comprehensive tests
       run: |
         uv run pytest -v -m "slow" --tb=short
-        
+
     - name: Validate analytical limits
       run: |
         uv run pytest tests/integration/test_analytical_limits.py -v
-        
+
     - name: Generate validation report
       run: |
         echo "## Weekly Validation Report $(date)" >> $GITHUB_STEP_SUMMARY
@@ -206,18 +206,18 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up Python 3.12
       uses: actions/setup-python@v4
       with:
         python-version: '3.12'
-        
-    - name: Install Bandit 
-      run: pip install bandit 
+
+    - name: Install Bandit
+      run: pip install bandit
 
     - name: Run Bandit Scan
       run: bandit -r rtrg/ -f json -o bandit-report.json

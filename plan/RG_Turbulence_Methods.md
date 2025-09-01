@@ -253,10 +253,10 @@ def momentum_shell_integral(integrand_func, Lambda, b, d=4):
         # Angular average (simplified for illustration)
         angular_factor = 2*np.pi**(d/2)/sp.gamma(d/2)
         return q**(d-1) * angular_factor * integrand_func(q)
-    
+
     result, error = integrate.quad(
-        radial_integrand, 
-        Lambda/b, 
+        radial_integrand,
+        Lambda/b,
         Lambda,
         epsrel=1e-8
     )
@@ -278,11 +278,11 @@ def extract_beta_functions(corrections, epsilon=0.1):
     beta_g = epsilon*g - corrections['g']
     beta_eta = -eta + corrections['eta']
     beta_tau = tau*(-z) + corrections['tau']
-    
+
     # Anomalous dimensions
     gamma_u = corrections['u_field'] / u
     gamma_pi = corrections['pi_field'] / pi
-    
+
     return {
         'beta_g': beta_g,
         'beta_eta': beta_eta,
@@ -311,7 +311,7 @@ def find_fixed_points(beta_functions, initial_guess):
             beta_functions['eta'](g, eta, tau),
             beta_functions['tau'](g, eta, tau)
         ]
-    
+
     solution = fsolve(fixed_point_equations, initial_guess)
     return solution
 ```
@@ -326,13 +326,13 @@ def stability_matrix(beta_funcs, fixed_point):
     """
     M = np.zeros((3, 3))
     g_fp, eta_fp, tau_fp = fixed_point
-    
+
     # Numerical derivatives
     eps = 1e-6
-    M[0,0] = (beta_funcs['g'](g_fp+eps, eta_fp, tau_fp) - 
+    M[0,0] = (beta_funcs['g'](g_fp+eps, eta_fp, tau_fp) -
               beta_funcs['g'](g_fp-eps, eta_fp, tau_fp))/(2*eps)
     # ... continue for all components
-    
+
     eigenvalues = np.linalg.eigvals(M)
     return eigenvalues
 ```
