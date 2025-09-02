@@ -43,7 +43,16 @@ import numpy as np
 import sympy as sp
 
 from .constants import PhysicalConstants
-from .tensors import IndexStructure, LorentzTensor, Metric
+from .tensors import (
+    ConstrainedTensorField,
+    IndexStructure,
+    IndexType,
+    LorentzTensor,
+    Metric,
+    ProjectionOperators,
+    TensorIndex,
+    TensorIndexStructure,
+)
 
 
 @dataclass
@@ -104,6 +113,7 @@ class FieldProperties:
     is_traceless: bool = False
     is_spatial: bool = False
     constraints: list[str] = field(default_factory=list)
+    field_type: str = "general"
 
     def __post_init__(self) -> None:
         """Validate field properties"""
@@ -647,3 +657,265 @@ class FieldRegistry:
     def __contains__(self, name: str) -> bool:
         """Check if field is registered"""
         return name in self.fields or name in self.response_fields
+
+
+# ============================================================================
+# Enhanced Tensor-Aware Field System for MSRJD Propagators
+# ============================================================================
+
+
+class TensorAwareField(Field):
+    """
+    Enhanced field class with full tensor index handling.
+
+    This class extends the base Field to include proper relativistic
+    tensor structure, constraints, and index management needed for
+    accurate MSRJD propagator calculations.
+    """
+
+    def __init__(
+        self,
+        properties: FieldProperties,
+        metric: Metric | None = None,
+        index_structure: TensorIndexStructure | None = None,
+        constraints: list[str] | None = None,
+    ):
+        """
+        Initialize tensor-aware field.
+
+        Args:
+            properties: Basic field properties
+            metric: Spacetime metric
+            index_structure: Tensor index structure
+            constraints: Physical constraints to enforce
+        """
+        super().__init__(properties, metric)
+
+        self.index_structure = index_structure
+        self.constraints = constraints or []
+        self.constrained_tensor = None
+
+        if index_structure is not None:
+            self.constrained_tensor = ConstrainedTensorField(
+                self.name, index_structure, constraints
+            )
+
+        self.projector = ProjectionOperators(self.metric) if metric else None
+
+    def apply_constraints(self, components: np.ndarray, **kwargs: Any) -> np.ndarray:
+        """Apply physical constraints to field components."""
+        if self.constrained_tensor is not None:
+            return self.constrained_tensor.apply_constraints(components, **kwargs)
+        return components
+
+    def validate_constraints(self, components: np.ndarray, **kwargs: Any) -> dict[str, bool]:
+        """Validate that components satisfy physical constraints."""
+        if self.constrained_tensor is not None:
+            return self.constrained_tensor.validate_constraints(components, **kwargs)
+        return {}
+
+    def get_constraint_projector(
+        self, constraint_type: str, four_velocity: np.ndarray | None = None
+    ) -> np.ndarray:
+        """Get projection operator for specific constraint."""
+        if self.projector is None:
+            raise ValueError("No metric provided for projection operations")
+
+        if four_velocity is None:
+            # Use default rest frame velocity
+            four_velocity = np.array([1.0, 0.0, 0.0, 0.0])
+
+        return self.projector.apply_constraint_projection(np.eye(4), constraint_type, four_velocity)
+
+
+class EnhancedEnergyDensityField(TensorAwareField):
+    """Enhanced energy density field with tensor structure."""
+
+    def __init__(self, metric: Metric | None = None):
+        properties = FieldProperties(
+            name="rho",
+            latex_symbol="\\rho",
+            indices=[],
+            index_types=[],
+            engineering_dimension=1,
+            canonical_dimension=4,
+            is_symmetric=False,
+            is_traceless=False,
+            is_spatial=False,
+        )
+
+        # Scalar field - no tensor indices
+        index_structure = TensorIndexStructure([])
+
+        super().__init__(properties, metric, index_structure, constraints=[])
+
+    def evolution_equation(self, **kwargs: Any) -> sp.Expr:
+        """Continuity equation: ∂ₜρ + ∇·(ρu) = 0"""
+        # This would be implemented with proper symbolic derivatives
+        return sp.Integer(0)  # Placeholder
+
+
+class EnhancedFourVelocityField(TensorAwareField):
+    """Enhanced four-velocity field with normalization constraint."""
+
+    def __init__(self, metric: Metric | None = None):
+        properties = FieldProperties(
+            name="u",
+            latex_symbol="u^\\mu",
+            indices=["mu"],
+            index_types=["contravariant"],
+            engineering_dimension=0,
+            canonical_dimension=0,
+            is_symmetric=False,
+            is_traceless=False,
+            is_spatial=False,
+        )
+
+        # Four-velocity has one upper spacetime index
+        mu_index = TensorIndex("mu", IndexType.SPACETIME, "upper")
+        index_structure = TensorIndexStructure([mu_index])
+
+        constraints = ["normalized"]  # u^μu_μ = -c² = -1
+
+        super().__init__(properties, metric, index_structure, constraints)
+
+    def evolution_equation(self, **kwargs: Any) -> sp.Expr:
+        """Four-velocity evolution from Euler equation"""
+        # This would implement the full relativistic Euler equation
+        return sp.Integer(0)  # Placeholder
+
+
+class EnhancedShearStressField(TensorAwareField):
+    """Enhanced shear stress field with symmetric, traceless, orthogonal constraints."""
+
+    def __init__(self, metric: Metric | None = None):
+        properties = FieldProperties(
+            name="pi",
+            latex_symbol="\\pi^{\\mu\\nu}",
+            indices=["mu", "nu"],
+            index_types=["contravariant", "contravariant"],
+            engineering_dimension=1,
+            canonical_dimension=4,
+            is_symmetric=True,
+            is_traceless=True,
+            is_spatial=True,
+        )
+
+        # Shear stress has two upper spacetime indices
+        mu_index = TensorIndex("mu", IndexType.SPACETIME, "upper")
+        nu_index = TensorIndex("nu", IndexType.SPACETIME, "upper")
+        index_structure = TensorIndexStructure([mu_index, nu_index])
+
+        constraints = ["symmetric", "traceless", "orthogonal_to_velocity"]
+
+        super().__init__(properties, metric, index_structure, constraints)
+
+    def evolution_equation(self, **kwargs: Any) -> sp.Expr:
+        """Israel-Stewart shear evolution: τ_π ∂ₜπ^μν + π^μν = 2η σ^μν"""
+        # This would implement the full IS shear evolution equation
+        return sp.Integer(0)  # Placeholder
+
+
+class EnhancedBulkPressureField(TensorAwareField):
+    """Enhanced bulk pressure field."""
+
+    def __init__(self, metric: Metric | None = None):
+        properties = FieldProperties(
+            name="Pi",
+            latex_symbol="\\Pi",
+            indices=[],
+            index_types=[],
+            engineering_dimension=1,
+            canonical_dimension=4,
+            is_symmetric=False,
+            is_traceless=False,
+            is_spatial=False,
+        )
+
+        # Bulk pressure is a scalar
+        index_structure = TensorIndexStructure([])
+
+        super().__init__(properties, metric, index_structure, constraints=[])
+
+    def evolution_equation(self, **kwargs: Any) -> sp.Expr:
+        """Israel-Stewart bulk evolution: τ_Π ∂ₜΠ + Π = -ζ ∇·u"""
+        return sp.Integer(0)  # Placeholder
+
+
+class EnhancedHeatFluxField(TensorAwareField):
+    """Enhanced heat flux field with orthogonality constraint."""
+
+    def __init__(self, metric: Metric | None = None):
+        properties = FieldProperties(
+            name="q",
+            latex_symbol="q^\\mu",
+            indices=["mu"],
+            index_types=["contravariant"],
+            engineering_dimension=1,
+            canonical_dimension=4,
+            is_symmetric=False,
+            is_traceless=False,
+            is_spatial=True,
+        )
+
+        # Heat flux has one upper spacetime index
+        mu_index = TensorIndex("mu", IndexType.SPACETIME, "upper")
+        index_structure = TensorIndexStructure([mu_index])
+
+        constraints = ["orthogonal_to_velocity"]  # q^μu_μ = 0
+
+        super().__init__(properties, metric, index_structure, constraints)
+
+    def evolution_equation(self, **kwargs: Any) -> sp.Expr:
+        """Israel-Stewart heat flux evolution: τ_q ∂ₜq^μ + q^μ = κ ∇^μ(T/T₀)"""
+        return sp.Integer(0)  # Placeholder
+
+
+class EnhancedFieldRegistry(FieldRegistry):
+    """Enhanced field registry with tensor-aware fields."""
+
+    def create_enhanced_is_fields(self, metric: Metric | None = None) -> None:
+        """Create enhanced Israel-Stewart fields with full tensor structure."""
+        enhanced_fields = [
+            EnhancedEnergyDensityField(metric),
+            EnhancedFourVelocityField(metric),
+            EnhancedShearStressField(metric),
+            EnhancedBulkPressureField(metric),
+            EnhancedHeatFluxField(metric),
+        ]
+
+        for field_obj in enhanced_fields:
+            self.register_field(field_obj)
+
+    def get_tensor_aware_field(self, name: str) -> TensorAwareField | None:
+        """Get tensor-aware field by name."""
+        field = self.fields.get(name)
+        return field if isinstance(field, TensorAwareField) else None
+
+    def validate_all_constraints(
+        self, field_components: dict[str, np.ndarray], **kwargs: Any
+    ) -> dict[str, dict[str, bool]]:
+        """Validate constraints for all tensor-aware fields."""
+        validation_results = {}
+
+        for name, components in field_components.items():
+            field = self.get_tensor_aware_field(name)
+            if field is not None:
+                validation_results[name] = field.validate_constraints(components, **kwargs)
+
+        return validation_results
+
+    def apply_all_constraints(
+        self, field_components: dict[str, np.ndarray], **kwargs: Any
+    ) -> dict[str, np.ndarray]:
+        """Apply constraints to all tensor-aware field components."""
+        constrained_components = {}
+
+        for name, components in field_components.items():
+            field = self.get_tensor_aware_field(name)
+            if field is not None:
+                constrained_components[name] = field.apply_constraints(components, **kwargs)
+            else:
+                constrained_components[name] = components
+
+        return constrained_components

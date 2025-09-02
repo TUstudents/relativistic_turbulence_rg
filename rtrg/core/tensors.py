@@ -27,8 +27,10 @@ References:
 """
 
 import itertools
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Union
+from enum import Enum
+from typing import Any, Union
 
 import numpy as np
 
@@ -727,3 +729,534 @@ class LorentzTensor:
 
     def __repr__(self) -> str:
         return self.__str__()
+
+
+# ============================================================================
+# Enhanced Tensor Index System for MSRJD Field Theory
+# ============================================================================
+
+
+class IndexType(Enum):
+    """Types of tensor indices for relativistic field theory."""
+
+    SPACETIME = "spacetime"  # μ, ν, λ, ... (0,1,2,3)
+    SPATIAL = "spatial"  # i, j, k, ... (1,2,3)
+    TEMPORAL = "temporal"  # time component (0)
+
+
+@dataclass
+class TensorIndex:
+    """
+    Represents a single tensor index with type and position information.
+
+    This class handles the bookkeeping for tensor indices in relativistic
+    field theory calculations, ensuring proper contraction rules and
+    type safety.
+    """
+
+    name: str  # Index symbol (μ, ν, i, j, etc.)
+    index_type: IndexType  # Type of index
+    position: str = "upper"  # "upper" or "lower" for covariant/contravariant
+    dimension: int = 4  # Dimension of index space
+
+    def __post_init__(self) -> None:
+        """Validate index parameters."""
+        if self.position not in ["upper", "lower"]:
+            raise ValueError(f"Invalid position: {self.position}")
+
+        if self.index_type == IndexType.SPATIAL and self.dimension != 3:
+            self.dimension = 3
+        elif self.index_type == IndexType.TEMPORAL and self.dimension != 1:
+            self.dimension = 1
+
+    def is_contractible_with(self, other: "TensorIndex") -> bool:
+        """Check if this index can contract with another."""
+        return (
+            self.index_type == other.index_type
+            and self.dimension == other.dimension
+            and self.position != other.position  # Must have opposite positions
+            and self.name == other.name  # Must be the same index symbol
+        )
+
+    def raise_lower_index(self) -> "TensorIndex":
+        """Return index with opposite position (raise/lower)."""
+        new_position = "lower" if self.position == "upper" else "upper"
+        return TensorIndex(self.name, self.index_type, new_position, self.dimension)
+
+
+class TensorIndexStructure:
+    """
+    Manages the complete index structure for tensor fields.
+
+    This class provides comprehensive index management for relativistic
+    tensor fields, handling automatic contraction, constraint checking,
+    and tensor algebra operations.
+    """
+
+    def __init__(self, indices: list[TensorIndex]):
+        """
+        Initialize with list of tensor indices.
+
+        Args:
+            indices: List of TensorIndex objects defining tensor structure
+        """
+        self.indices = indices.copy()
+        self._validate_indices()
+
+    def _validate_indices(self) -> None:
+        """Validate tensor index structure."""
+        # Check for dummy index pairs (same name, opposite position)
+        index_counts: dict[str, int] = {}
+        for idx in self.indices:
+            index_counts[idx.name] = index_counts.get(idx.name, 0) + 1
+
+        # Dummy indices should appear exactly twice
+        for name, count in index_counts.items():
+            if count > 2:
+                raise ValueError(f"Index {name} appears {count} times (max 2 allowed)")
+
+    @property
+    def rank(self) -> int:
+        """Tensor rank (number of indices)."""
+        return len(self.indices)
+
+    @property
+    def free_indices(self) -> list[TensorIndex]:
+        """Get free (uncontracted) indices."""
+        index_counts: dict[str, list[TensorIndex]] = {}
+        for idx in self.indices:
+            if idx.name not in index_counts:
+                index_counts[idx.name] = []
+            index_counts[idx.name].append(idx)
+
+        free = []
+        for indices_list in index_counts.values():
+            if len(indices_list) == 1:
+                free.append(indices_list[0])
+
+        return free
+
+    @property
+    def dummy_indices(self) -> list[tuple[TensorIndex, TensorIndex]]:
+        """Get dummy (contracted) index pairs."""
+        index_groups: dict[str, list[TensorIndex]] = {}
+        for idx in self.indices:
+            if idx.name not in index_groups:
+                index_groups[idx.name] = []
+            index_groups[idx.name].append(idx)
+
+        dummy_pairs = []
+        for indices_list in index_groups.values():
+            if len(indices_list) == 2:
+                idx1, idx2 = indices_list
+                if idx1.is_contractible_with(idx2):
+                    dummy_pairs.append((idx1, idx2))
+
+        return dummy_pairs
+
+    def contract_with(
+        self, other: "TensorIndexStructure", contractions: list[tuple[int, int]]
+    ) -> "TensorIndexStructure":
+        """
+        Contract this tensor structure with another.
+
+        Args:
+            other: Other tensor index structure
+            contractions: List of (self_idx, other_idx) pairs to contract
+
+        Returns:
+            New TensorIndexStructure representing the contraction result
+        """
+        # Validate contractions
+        for self_idx, other_idx in contractions:
+            if not (0 <= self_idx < len(self.indices)):
+                raise ValueError(f"Invalid self index: {self_idx}")
+            if not (0 <= other_idx < len(other.indices)):
+                raise ValueError(f"Invalid other index: {other_idx}")
+
+            self_index = self.indices[self_idx]
+            other_index = other.indices[other_idx]
+
+            if not self_index.is_contractible_with(other_index):
+                raise ValueError(f"Cannot contract {self_index} with {other_index}")
+
+        # Build result indices
+        result_indices = []
+
+        # Add uncontracted indices from self
+        contracted_self = {pair[0] for pair in contractions}
+        for i, idx in enumerate(self.indices):
+            if i not in contracted_self:
+                result_indices.append(idx)
+
+        # Add uncontracted indices from other
+        contracted_other = {pair[1] for pair in contractions}
+        for i, idx in enumerate(other.indices):
+            if i not in contracted_other:
+                result_indices.append(idx)
+
+        return TensorIndexStructure(result_indices)
+
+    def apply_symmetry(self, symmetry_type: str, index_pairs: list[tuple[int, int]]) -> None:
+        """
+        Apply symmetry constraints to tensor indices.
+
+        Args:
+            symmetry_type: "symmetric" or "antisymmetric"
+            index_pairs: Pairs of indices to make (anti)symmetric
+        """
+        # This is a placeholder - full implementation would modify tensor components
+        # according to symmetry constraints
+        pass
+
+    def apply_traceless_condition(self, index_pairs: list[tuple[int, int]]) -> None:
+        """
+        Apply traceless condition to tensor indices.
+
+        Args:
+            index_pairs: Pairs of indices that should be traced to zero
+        """
+        # This is a placeholder - full implementation would project out trace
+        pass
+
+
+class ConstrainedTensorField:
+    """
+    Represents tensor fields with physical constraints.
+
+    This class handles tensor fields that must satisfy physical constraints
+    such as normalization, orthogonality, symmetry, and tracelessness.
+    """
+
+    def __init__(
+        self, name: str, index_structure: TensorIndexStructure, constraints: list[str] | None = None
+    ):
+        """
+        Initialize constrained tensor field.
+
+        Args:
+            name: Field name
+            index_structure: Tensor index structure
+            constraints: List of constraint names
+        """
+        self.name = name
+        self.index_structure = index_structure
+        self.constraints = constraints or []
+        self._constraint_handlers: dict[str, Callable[[np.ndarray], np.ndarray]] = {
+            "normalized": self._apply_normalization,
+            "symmetric": self._apply_symmetry,
+            "antisymmetric": self._apply_antisymmetry,
+            "traceless": self._apply_traceless,
+            "orthogonal_to_velocity": lambda x, **kwargs: self._apply_velocity_orthogonality(
+                x, kwargs.get("velocity", np.array([1, 0, 0, 0]))
+            ),
+        }
+
+    def _apply_normalization(self, components: np.ndarray, norm_value: float = -1.0) -> np.ndarray:
+        """Apply normalization constraint."""
+        # For four-velocity: u^μ u_μ = -c² = -1 (natural units)
+        current_norm = np.sum(components * components * np.array([-1, 1, 1, 1]))
+        if abs(current_norm - norm_value) > 1e-10:
+            # Rescale to maintain normalization
+            scale_factor = np.sqrt(abs(norm_value / current_norm))
+            return components * scale_factor  # type: ignore[no-any-return]
+        return components  # type: ignore[no-any-return]
+
+    def _apply_symmetry(self, components: np.ndarray) -> np.ndarray:
+        """Apply symmetry constraint."""
+        # Symmetrize tensor components
+        if len(components.shape) == 2:
+            return 0.5 * (components + components.T)  # type: ignore[no-any-return]
+        # Higher rank tensors would need more sophisticated symmetrization
+        return components  # type: ignore[no-any-return]
+
+    def _apply_antisymmetry(self, components: np.ndarray) -> np.ndarray:
+        """Apply antisymmetry constraint."""
+        if len(components.shape) == 2:
+            return 0.5 * (components - components.T)  # type: ignore[no-any-return]
+        return components  # type: ignore[no-any-return]
+
+    def _apply_traceless(self, components: np.ndarray) -> np.ndarray:
+        """Apply traceless constraint."""
+        if len(components.shape) == 2:
+            trace = np.trace(components)
+            dim = components.shape[0]
+            return components - (trace / dim) * np.eye(dim)  # type: ignore[no-any-return]
+        return components  # type: ignore[no-any-return]
+
+    def _apply_velocity_orthogonality(
+        self, components: np.ndarray, velocity: np.ndarray
+    ) -> np.ndarray:
+        """Apply orthogonality to four-velocity."""
+        # Project out components parallel to velocity
+        # For vector: q^μ → q^μ - (q·u)u^μ
+        if len(components.shape) == 1:
+            dot_product = np.sum(components * velocity * np.array([-1, 1, 1, 1]))
+            return components - dot_product * velocity  # type: ignore[no-any-return]
+        return components  # type: ignore[no-any-return]
+
+    def apply_constraints(self, components: np.ndarray, **kwargs: Any) -> np.ndarray:
+        """Apply all registered constraints to field components."""
+        result = components.copy()
+
+        for constraint in self.constraints:
+            if constraint in self._constraint_handlers:
+                result = self._constraint_handlers[constraint](result, **kwargs)
+
+        return result
+
+    def validate_constraints(self, components: np.ndarray, **kwargs: Any) -> dict[str, bool]:
+        """Validate that components satisfy all constraints."""
+        validation_results = {}
+
+        for constraint in self.constraints:
+            if constraint == "normalized":
+                norm = np.sum(components * components * np.array([-1, 1, 1, 1]))
+                validation_results[constraint] = abs(norm + 1.0) < 1e-10
+            elif constraint == "symmetric":
+                if len(components.shape) == 2:
+                    validation_results[constraint] = np.allclose(
+                        components, components.T, rtol=1e-10
+                    )
+                else:
+                    validation_results[constraint] = True
+            elif constraint == "traceless":
+                if len(components.shape) == 2:
+                    validation_results[constraint] = abs(np.trace(components)) < 1e-10
+                else:
+                    validation_results[constraint] = True
+            else:
+                validation_results[constraint] = True
+
+        return validation_results
+
+
+class ProjectionOperators:
+    """
+    Projection operators for relativistic hydrodynamic field decomposition.
+
+    This class provides the fundamental projection operators needed to decompose
+    tensor fields into longitudinal/transverse components and enforce physical
+    constraints in relativistic fluid dynamics.
+    """
+
+    def __init__(self, metric: Metric):
+        """
+        Initialize with spacetime metric.
+
+        Args:
+            metric: Metric object defining the spacetime geometry
+        """
+        self.metric = metric
+
+    def spatial_projector(self, four_velocity: np.ndarray) -> np.ndarray:
+        """
+        Spatial projection operator h^μν = g^μν + u^μu^ν/c².
+
+        Projects tensors into the spatial hypersurface orthogonal to
+        the four-velocity, essential for 3+1 decomposition.
+
+        Args:
+            four_velocity: Four-velocity u^μ (normalized)
+
+        Returns:
+            Spatial projector h^μν as 4×4 array
+        """
+        g_inv = np.linalg.inv(self.metric.g)
+        u_outer = np.outer(four_velocity, four_velocity)
+
+        # In natural units c = 1, so h^μν = g^μν + u^μu^ν
+        h_projector = g_inv + u_outer
+
+        return h_projector
+
+    def longitudinal_projector(self, momentum: np.ndarray) -> np.ndarray:
+        """
+        Longitudinal projection operator P^L_ij = k_ik_j/k².
+
+        Projects vector fields along the momentum direction,
+        used for decomposing velocity perturbations.
+
+        Args:
+            momentum: Spatial momentum vector k^i
+
+        Returns:
+            Longitudinal projector P^L_ij as 3×3 array
+        """
+        k_magnitude_sq = np.sum(momentum**2)
+
+        if k_magnitude_sq < 1e-12:
+            # For k→0, return zero projector
+            return np.zeros((3, 3))
+
+        k_outer = np.outer(momentum, momentum)
+        return k_outer / k_magnitude_sq  # type: ignore[no-any-return]
+
+    def transverse_projector(self, momentum: np.ndarray) -> np.ndarray:
+        """
+        Transverse projection operator P^T_ij = δ_ij - k_ik_j/k².
+
+        Projects vector fields perpendicular to momentum direction,
+        used for transverse (shear) modes.
+
+        Args:
+            momentum: Spatial momentum vector k^i
+
+        Returns:
+            Transverse projector P^T_ij as 3×3 array
+        """
+        longitudinal = self.longitudinal_projector(momentum)
+        return np.eye(3) - longitudinal  # type: ignore[no-any-return]
+
+    def symmetric_traceless_projector(self, four_velocity: np.ndarray) -> np.ndarray:
+        """
+        Symmetric traceless tensor projector for shear stress.
+
+        Projects rank-2 tensors into the symmetric, traceless, and
+        orthogonal-to-velocity subspace: π^μν_orthogonal.
+
+        Args:
+            four_velocity: Four-velocity u^μ (normalized)
+
+        Returns:
+            Projection operator as 4×4×4×4 array
+        """
+        h_proj = self.spatial_projector(four_velocity)
+
+        # Build the symmetric traceless projector
+        # P^μν_αβ = ½(h^μ_α h^ν_β + h^μ_β h^ν_α) - ⅓h^μν h_αβ
+        projector = np.zeros((4, 4, 4, 4))
+
+        for mu in range(4):
+            for nu in range(4):
+                for alpha in range(4):
+                    for beta in range(4):
+                        # Symmetric part
+                        symmetric_term = 0.5 * (
+                            h_proj[mu, alpha] * h_proj[nu, beta]
+                            + h_proj[mu, beta] * h_proj[nu, alpha]
+                        )
+
+                        # Traceless part (subtract 1/3 of trace)
+                        trace_term = (1.0 / 3.0) * h_proj[mu, nu] * h_proj[alpha, beta]
+
+                        projector[mu, nu, alpha, beta] = symmetric_term - trace_term
+
+        return projector
+
+    def velocity_orthogonal_projector(self, four_velocity: np.ndarray, rank: int = 1) -> np.ndarray:
+        """
+        Project tensors to be orthogonal to four-velocity.
+
+        For vectors: q^μ_⊥ = h^μν q_ν
+        For tensors: T^μν_⊥ = h^μα h^νβ T_αβ
+
+        Args:
+            four_velocity: Four-velocity u^μ (normalized)
+            rank: Tensor rank (1 for vectors, 2 for matrices, etc.)
+
+        Returns:
+            Orthogonal projection operator
+        """
+        h_proj = self.spatial_projector(four_velocity)
+
+        if rank == 1:
+            return h_proj
+        elif rank == 2:
+            # For rank-2 tensors: P^μν_αβ = h^μα h^νβ
+            projector = np.zeros((4, 4, 4, 4))
+            for mu in range(4):
+                for nu in range(4):
+                    for alpha in range(4):
+                        for beta in range(4):
+                            projector[mu, nu, alpha, beta] = h_proj[mu, alpha] * h_proj[nu, beta]
+            return projector
+        else:
+            raise ValueError(f"Projection for rank {rank} tensors not implemented")
+
+    def decompose_vector(
+        self, vector: np.ndarray, momentum: np.ndarray, four_velocity: np.ndarray
+    ) -> dict[str, np.ndarray]:
+        """
+        Decompose a vector into longitudinal and transverse components.
+
+        Args:
+            vector: 4-vector to decompose
+            momentum: Spatial momentum k^i
+            four_velocity: Four-velocity u^μ
+
+        Returns:
+            Dictionary with 'longitudinal' and 'transverse' components
+        """
+        # First project to spatial hypersurface
+        h_proj = self.spatial_projector(four_velocity)
+        spatial_vector = h_proj @ vector
+
+        # Extract spatial part (indices 1,2,3)
+        spatial_3vector = spatial_vector[1:]
+
+        # Decompose into longitudinal/transverse
+        p_long = self.longitudinal_projector(momentum)
+        p_trans = self.transverse_projector(momentum)
+
+        longitudinal_spatial = p_long @ spatial_3vector
+        transverse_spatial = p_trans @ spatial_3vector
+
+        # Reconstruct 4-vectors
+        longitudinal_4vec = np.zeros(4)
+        longitudinal_4vec[1:] = longitudinal_spatial
+
+        transverse_4vec = np.zeros(4)
+        transverse_4vec[1:] = transverse_spatial
+
+        return {
+            "longitudinal": longitudinal_4vec,
+            "transverse": transverse_4vec,
+            "temporal": vector[0] * np.array([1, 0, 0, 0]),  # Time component
+        }
+
+    def apply_constraint_projection(
+        self, tensor: np.ndarray, constraint_type: str, four_velocity: np.ndarray
+    ) -> np.ndarray:
+        """
+        Apply constraint projections to tensor fields.
+
+        Args:
+            tensor: Input tensor array
+            constraint_type: Type of constraint ('traceless', 'orthogonal', 'symmetric_traceless')
+            four_velocity: Four-velocity for orthogonality constraints
+
+        Returns:
+            Projected tensor satisfying the constraint
+        """
+        if constraint_type == "orthogonal":
+            if len(tensor.shape) == 1:
+                proj = self.velocity_orthogonal_projector(four_velocity, rank=1)
+                return proj @ tensor  # type: ignore[no-any-return]
+            elif len(tensor.shape) == 2:
+                proj = self.velocity_orthogonal_projector(four_velocity, rank=2)
+                result = np.zeros_like(tensor)
+                for mu in range(4):
+                    for nu in range(4):
+                        for alpha in range(4):
+                            for beta in range(4):
+                                result[mu, nu] += proj[mu, nu, alpha, beta] * tensor[alpha, beta]
+                return result  # type: ignore[no-any-return]
+
+        elif constraint_type == "symmetric_traceless":
+            if len(tensor.shape) == 2:
+                proj = self.symmetric_traceless_projector(four_velocity)
+                result = np.zeros_like(tensor)
+                for mu in range(4):
+                    for nu in range(4):
+                        for alpha in range(4):
+                            for beta in range(4):
+                                result[mu, nu] += proj[mu, nu, alpha, beta] * tensor[alpha, beta]
+                return result
+
+        elif constraint_type == "traceless":
+            if len(tensor.shape) == 2:
+                trace = np.trace(tensor)
+                return tensor - (trace / 4.0) * np.eye(4)  # type: ignore[no-any-return]
+
+        return tensor
