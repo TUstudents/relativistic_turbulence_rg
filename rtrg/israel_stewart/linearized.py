@@ -244,8 +244,10 @@ class LinearizedIS:
         fields["Pi"] = LinearizedField("Pi", self.background.Pi, tensor_rank=0)
 
         # Vector fields (guaranteed to be non-None after __post_init__)
-        assert self.background.u is not None
-        assert self.background.q is not None
+        if self.background.u is None:
+            raise ValueError("Background four-velocity u is None - invalid background state")
+        if self.background.q is None:
+            raise ValueError("Background heat flux q is None - invalid background state")
         fields["u"] = LinearizedField("u", self.background.u, tensor_rank=1)
         fields["q"] = LinearizedField(
             "q", self.background.q, tensor_rank=1, symmetries=["spatial"]
