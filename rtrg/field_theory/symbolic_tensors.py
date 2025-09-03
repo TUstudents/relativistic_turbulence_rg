@@ -211,8 +211,50 @@ class SymbolicTensorField(Function):
         if not isinstance(indices, tuple | list):
             indices = (indices,)
 
-        # Create function call with all arguments
-        return Function.__call__(self, *indices)
+        # Create a component function with indices encoded in the name
+        # Format: field_name(coordinates) with indices as subscripts
+        if len(indices) > len(self._coordinates):
+            # Separate tensor indices from coordinates
+            n_coords = len(self._coordinates)
+            tensor_indices = indices[:-n_coords] if n_coords > 0 else indices
+            coords = indices[-n_coords:] if n_coords > 0 else []
+
+            # Create component name with indices
+            if tensor_indices:
+                index_str = "_".join(str(idx) for idx in tensor_indices)
+                component_name = f"{self.field_name}_{index_str}"
+            else:
+                component_name = self.field_name
+        else:
+            # Only coordinates provided
+            coords = indices
+            component_name = self.field_name
+
+        # Create and return the component function
+        component_func = Function(component_name)
+        if coords:
+            return component_func(*coords)
+        else:
+            return component_func
+
+    def __call__(self, *coordinates: Any) -> Any:
+        """
+        Make tensor field callable for scalar fields (rank 0).
+
+        Args:
+            coordinates: Spacetime coordinates
+
+        Returns:
+            Function evaluation at the given coordinates
+        """
+        # For scalar fields, just call with coordinates
+        if not hasattr(self, "_rank") or getattr(self, "_rank", 0) == 0:
+            component_func = Function(self.field_name)
+            return component_func(*coordinates)
+        else:
+            raise TypeError(
+                f"Tensor field {self.field_name} with rank > 0 is not directly callable. Use indexing: field[indices, coordinates]"
+            )
 
     def create_component(
         self, tensor_indices: list[Symbol], coordinate_values: list[Symbol] | None = None

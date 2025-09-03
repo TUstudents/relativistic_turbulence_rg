@@ -658,6 +658,14 @@ class FieldRegistry:
         """Check if field is registered"""
         return name in self.fields or name in self.response_fields
 
+    def get_tensor_aware_field(self, name: str) -> Field | None:
+        """Compatibility method for tensor-aware field access.
+
+        For base FieldRegistry, this just returns the regular field.
+        Enhanced registries can override this for proper tensor handling.
+        """
+        return self.get_field(name)
+
 
 # ============================================================================
 # Enhanced Tensor-Aware Field System for MSRJD Propagators

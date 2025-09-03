@@ -268,13 +268,20 @@ class TensorMSRJDAction:
         self.parameters = is_system.parameters
         self.metric = is_system.metric
 
+        # Spacetime coordinates (needed before field registry creation)
+        self.coordinates = symbols("t x y z", real=True)
+
         # Create field registry
-        if use_enhanced_registry and hasattr(is_system, "field_registry"):
-            # Use Phase 1 enhanced registry if available
+        if (
+            use_enhanced_registry
+            and hasattr(is_system, "field_registry")
+            and hasattr(is_system.field_registry, "get_tensor_aware_field")
+        ):
+            # Use Phase 1 enhanced registry if available (has tensor-aware fields)
             self.phase1_registry = is_system.field_registry
             self.field_registry = self._create_symbolic_registry()
         else:
-            # Create new symbolic registry
+            # Create new symbolic registry with direct field creation
             self.field_registry = IndexedFieldRegistry()
             self._initialize_symbolic_fields()
 
@@ -282,9 +289,6 @@ class TensorMSRJDAction:
         self.noise_correlator = TensorNoiseCorrelator(
             self.parameters, self.field_registry, self.metric, temperature
         )
-
-        # Spacetime coordinates
-        self.coordinates = symbols("t x y z", real=True)
 
         # Constraint multipliers
         self.constraint_multipliers = {
@@ -357,6 +361,10 @@ class TensorMSRJDAction:
         # Get all field-antifield pairs
         field_pairs = self.field_registry.generate_field_action_pairs()
 
+        # If no field pairs, return zero (expected for some incomplete setups)
+        if not field_pairs:
+            return sp.sympify(0)
+
         for physical_field, response_field in field_pairs:
             field_name = physical_field.field_name
 
@@ -368,14 +376,14 @@ class TensorMSRJDAction:
 
             elif physical_field.index_count == 1:  # Vector field
                 mu = symbols("mu", integer=True)
-                field_expr = physical_field(mu, *self.coordinates)
-                response_expr = response_field(mu, *self.coordinates)
+                field_expr = physical_field[mu, *self.coordinates]
+                response_expr = response_field[mu, *self.coordinates]
                 time_deriv = TensorDerivative(field_expr, self.coordinates[0], "partial")
 
             elif physical_field.index_count == 2:  # Tensor field
                 mu, nu = symbols("mu nu", integer=True)
-                field_expr = physical_field(mu, nu, *self.coordinates)
-                response_expr = response_field(mu, nu, *self.coordinates)
+                field_expr = physical_field[mu, nu, *self.coordinates]
+                response_expr = response_field[mu, nu, *self.coordinates]
                 time_deriv = TensorDerivative(field_expr, self.coordinates[0], "partial")
 
             # Add evolution equation RHS (simplified for now)
@@ -400,11 +408,13 @@ class TensorMSRJDAction:
         """
         if field_name == "rho":
             # Energy density: ∂_t ρ + ∇_i(ρ u^i) = 0
-            return sp.sympify(0)  # Simplified
+            # Simple placeholder with field coupling
+            return -field_expr * Symbol("gamma_rho")
 
         elif field_name == "u":
             # Four-velocity: (ρ + p + Π) u^μ ∂_ν u^ν = -∇^μ(p + Π) + ∇_ν π^{μν}
-            return sp.sympify(0)  # Simplified
+            # Simple placeholder with field coupling
+            return -field_expr * Symbol("gamma_u")
 
         elif field_name == "pi":
             # Shear stress: τ_π ∂_t π^{μν} + π^{μν} = 2η σ^{μν} + ...
