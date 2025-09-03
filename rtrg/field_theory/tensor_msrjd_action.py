@@ -38,7 +38,7 @@ References:
 
 import warnings
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import sympy as sp
 from sympy import Derivative, Function, IndexedBase, Matrix, Symbol, symbols
@@ -310,17 +310,15 @@ class TensorMSRJDAction:
 
             for field_name in ["rho", "u", "pi", "Pi", "q"]:
                 phase1_field = enhanced_registry.get_field(field_name)
-                if phase1_field and isinstance(phase1_field, TensorAwareField):
-                    # Convert to symbolic tensor field
+                if phase1_field:
+                    # Convert any Phase 1 field to symbolic tensor field
                     symbolic_field = self._convert_to_symbolic(field_name, phase1_field)
                     symbolic_registry.register_field(field_name, symbolic_field)
                     symbolic_registry.create_antifield(field_name)
 
         return symbolic_registry
 
-    def _convert_to_symbolic(
-        self, field_name: str, phase1_field: TensorAwareField
-    ) -> SymbolicTensorField:
+    def _convert_to_symbolic(self, field_name: str, phase1_field: Any) -> SymbolicTensorField:
         """Convert Phase 1 TensorAwareField to SymbolicTensorField."""
         # Extract index structure from Phase 1 field
         if hasattr(phase1_field, "index_structure") and phase1_field.index_structure is not None:
@@ -336,9 +334,24 @@ class TensorMSRJDAction:
             elif field_name == "pi":
                 index_info = [("mu", "upper", "spacetime"), ("nu", "upper", "spacetime")]  # Tensor
 
+        # Extract field type from Phase 1 field (with fallback)
+        field_type = "physical"  # Default
+        if hasattr(phase1_field, "properties") and hasattr(phase1_field.properties, "field_type"):
+            field_type = phase1_field.properties.field_type
+        elif hasattr(phase1_field, "field_type"):
+            field_type = phase1_field.field_type
+        else:
+            # Determine field type from structure
+            if not index_info:
+                field_type = "scalar"
+            elif len(index_info) == 1:
+                field_type = "vector"
+            elif len(index_info) == 2:
+                field_type = "tensor"
+
         # Create symbolic field
         symbolic_field = SymbolicTensorField(
-            field_name, index_info, self.coordinates, field_type=phase1_field.properties.field_type
+            field_name, index_info, self.coordinates, field_type=field_type
         )
 
         return symbolic_field
