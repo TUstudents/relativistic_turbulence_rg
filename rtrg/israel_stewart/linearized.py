@@ -489,13 +489,21 @@ class LinearizedIS:
                 numerical_solutions.append(complex(sol))
 
         if mode == "sound":
-            # Sound mode: look for solution with Re(ω) ≈ c_s * k
+            # Sound mode: look for solution with Re(ω) ≈ c_s * k and prefer damping (Im < 0)
             sound_speed_sq = self.parameters.equilibrium_pressure / self.background.rho
             target_freq = np.sqrt(sound_speed_sq) * k_val
 
-            # Find closest solution to expected sound mode
-            best_solution = min(numerical_solutions, key=lambda x: abs(x.real - target_freq))
-            return best_solution
+            # First, filter candidates close in real part
+            close = sorted(
+                numerical_solutions,
+                key=lambda x: (abs(x.real - target_freq), x.imag),
+            )
+            # Prefer negative imaginary part if available among close candidates
+            for sol in close:
+                if sol.imag < 0:
+                    return complex(sol)
+            # Fallback: return closest by real part
+            return complex(close[0])
 
         elif mode == "diffusive":
             # Diffusive mode: purely imaginary frequency

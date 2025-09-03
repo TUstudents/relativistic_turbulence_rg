@@ -217,11 +217,14 @@ class Field(ABC):
 
         return tensor
 
-    def validate_components(self, components: np.ndarray) -> bool:
+    def validate_components(
+        self, components: np.ndarray, velocity: np.ndarray | None = None
+    ) -> bool:
         """Validate field components satisfy constraints
 
         Args:
             components: Field components to validate
+            velocity: Optional four-velocity for spatial constraints
 
         Returns:
             True if components satisfy all constraints
@@ -239,7 +242,21 @@ class Field(ABC):
                 return False
 
         # Check spatial orthogonality (requires velocity context)
-        # This would need to be implemented with a velocity field
+        if velocity is not None and self.properties.is_spatial:
+            from ..israel_stewart.constraints import (
+                is_spatial_vector,
+                is_symmetric_traceless_spatial,
+            )
+
+            if self.rank == 2:
+                ok, _details = is_symmetric_traceless_spatial(
+                    tensor.components, np.asarray(velocity), self.metric
+                )
+                if not ok:
+                    return False
+            elif self.rank == 1:
+                if not is_spatial_vector(tensor.components, np.asarray(velocity), self.metric):
+                    return False
 
         return True
 

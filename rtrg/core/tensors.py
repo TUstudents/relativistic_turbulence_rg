@@ -489,16 +489,17 @@ class LorentzTensor:
         if len(velocity) != self.metric.dim:
             raise ValueError(f"Velocity must have dimension {self.metric.dim}")
 
-        # Construct spatial projector Δ^μν = g^μν + u^μu^ν/c²
+        # Construct spatial projector with correct index positions:
+        # Δ_{μν} = g_{μν} + u_μ u_ν / c², with u_μ = g_{μσ} u^σ
         g = self.metric.g
         c_sq = PhysicalConstants.c**2
-
-        # Projector (assuming u is contravariant)
-        Delta = g + np.outer(velocity, velocity) / c_sq
+        u_lower = g @ velocity
+        Delta = g + np.outer(u_lower, u_lower) / c_sq
 
         # Apply projector to each index
         result = self.components.copy()
         for i in range(self.rank):
+            # Contract covariant projector on the i-th index of the tensor
             result = np.tensordot(Delta, result, axes=([1], [i]))
             # Move contracted axis back to position i
             axes = list(range(result.ndim))

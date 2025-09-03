@@ -286,11 +286,11 @@ class IsraelStewartSystem:
         Construct the complete stress-energy tensor T^{μν}.
 
         The stress-energy tensor in Israel-Stewart theory includes
-        both equilibrium and non-equilibrium contributions from
-        viscous stresses and heat conduction.
+        equilibrium and non-equilibrium contributions from viscous stresses
+        and heat conduction (shown here in a generic frame):
 
         Mathematical Form:
-            T^{μν} = (ρ + p_eq + Π)u^μu^ν + (p_eq + Π)g^{μν} + π^{μν}
+            T^{μν} = (ρ + p_eq + Π)u^μu^ν + (p_eq + Π)g^{μν} + π^{μν} + q^μ u^ν + q^ν u^μ
 
         Returns:
             Symbolic stress-energy tensor as 4x4 array
@@ -302,6 +302,7 @@ class IsraelStewartSystem:
         Pi_sym = sp.Symbol("Pi")
         p_eq = sp.Symbol("p_eq")
         g_munu = sp.IndexedBase("g")
+        q_mu = sp.IndexedBase("q")
 
         # Construct stress-energy tensor components
         T_components = []
@@ -317,7 +318,10 @@ class IsraelStewartSystem:
                 # Viscous stress term
                 viscous_term = pi_munu[mu, nu]
 
-                T_row.append(perfect_fluid_term + pressure_term + viscous_term)
+                # Heat flux symmetric energy transport terms
+                heat_terms = q_mu[mu] * u_mu[nu] + q_mu[nu] * u_mu[mu]
+
+                T_row.append(perfect_fluid_term + pressure_term + viscous_term + heat_terms)
             T_components.append(T_row)
 
         return sp.Array(T_components)

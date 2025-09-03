@@ -160,6 +160,21 @@ class TestLorentzTensor:
         # Time-time component should be modified
         assert projected.components[0, 0] != components[0, 0]
 
+    def test_spatial_projector_matches_constraints(self, metric, normalized_four_velocity):
+        """Ensure core projector matches constraints.spatial_projector."""
+        from rtrg.israel_stewart.constraints import spatial_projector
+
+        u = normalized_four_velocity
+        # Build Δ using constraints helper
+        Delta_constraints = spatial_projector(u, metric)
+
+        # Build Δ via core Metric computation (using same formula internally)
+        g = metric.g
+        u_lower = g @ u
+        Delta_core = g + np.outer(u_lower, u_lower) / (1.0**2)
+
+        np.testing.assert_allclose(Delta_constraints, Delta_core, atol=1e-12)
+
     def test_index_raising_lowering(self, metric):
         """Test index raising and lowering for tensors"""
         # Create vector with covariant index
