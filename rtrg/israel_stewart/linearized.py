@@ -474,7 +474,28 @@ class LinearizedIS:
                 poly = sp.Poly(sp.simplify(char_poly_k), self.omega)
                 omega_solutions = list(poly.nroots(n=30))  # higher precision if needed
             except Exception:
-                return 0j  # No solutions found
+                # Final fallback: try to solve numerically with numpy
+                try:
+                    # Convert to numpy polynomial and solve
+                    coeffs: list[complex] = []
+                    poly_expanded = sp.expand(char_poly_k)
+                    # Extract coefficients for omega powers
+                    for i in range(4):  # cubic polynomial, so powers 0,1,2,3
+                        coeff = poly_expanded.coeff(self.omega, i)
+                        if coeff is None:
+                            coeffs.append(0)
+                        else:
+                            coeffs.append(complex(coeff))
+                    # numpy.roots expects coefficients in descending order
+                    coeffs.reverse()
+                    if any(c != 0 for c in coeffs):
+                        import numpy as np
+
+                        omega_solutions = np.roots(coeffs).tolist()
+                    else:
+                        return 0j
+                except Exception:
+                    return 0j  # No solutions found
 
         # Convert to numerical values and select appropriate mode
         numerical_solutions = []
@@ -490,19 +511,28 @@ class LinearizedIS:
 
         if mode == "sound":
             # Sound mode: look for solution with Re(ω) ≈ c_s * k and prefer damping (Im < 0)
-            sound_speed_sq = self.parameters.equilibrium_pressure / self.background.rho
+            import numpy as np
+
+            sound_speed_sq = self.background.pressure / self.background.rho
             target_freq = np.sqrt(sound_speed_sq) * k_val
+
+            # Filter out spurious solutions with very large imaginary parts
+            physical_solutions = [
+                sol
+                for sol in numerical_solutions
+                if abs(sol.imag) < 10 * target_freq  # Reasonable damping bound
+            ]
+
+            if not physical_solutions:
+                physical_solutions = numerical_solutions  # Fallback to all solutions
 
             # First, filter candidates close in real part
             close = sorted(
-                numerical_solutions,
-                key=lambda x: (abs(x.real - target_freq), x.imag),
+                physical_solutions,
+                key=lambda x: (abs(x.real - target_freq), abs(x.imag)),
             )
-            # Prefer negative imaginary part if available among close candidates
-            for sol in close:
-                if sol.imag < 0:
-                    return complex(sol)
-            # Fallback: return closest by real part
+
+            # Return the solution with real part closest to target frequency
             return complex(close[0])
 
         elif mode == "diffusive":
@@ -575,7 +605,7 @@ class LinearizedIS:
         return {
             "tau_pi_critical": tau_critical,
             # Use parameter-based thermodynamic relation to match test expectations
-            "sound_speed_squared": self.parameters.equilibrium_pressure / self.background.rho,
+            "sound_speed_squared": self.background.pressure / self.background.rho,
             "attenuation_coefficient": self.sound_attenuation_coefficient(),
         }
 

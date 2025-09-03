@@ -409,7 +409,20 @@ class FourVelocityField(Field):
     def evolution_equation(self, **kwargs: Any) -> sp.Expr:
         """Evolution from momentum conservation"""
         # This would be derived from ∂_μ T^{μν} = 0
-        return sp.Integer(0)  # Placeholder
+        # Four-velocity evolution: u^μ ∂_μ u^ν = -h^μν ∂_μ P/(ε+P)
+
+        t, x, y, z = sp.symbols("t x y z", real=True)
+        u_mu = sp.Matrix([sp.Function(f"u_{i}")(t, x, y, z) for i in ["t", "x", "y", "z"]])
+        P = sp.Function("P")(t, x, y, z)  # Pressure
+        epsilon = sp.Function("epsilon")(t, x, y, z)  # Energy density
+
+        # Simplified Euler equation for relativistic fluid
+        # u^μ ∂_μ u^ν = -h^μν ∂_μ P/(ε+P)
+        # For now, return the time derivative term
+        time_deriv = sp.diff(u_mu[0], t)  # Simplified to temporal component
+        pressure_gradient = -sp.diff(P, t) / (epsilon + P)
+
+        return time_deriv - pressure_gradient
 
     def is_normalized(self, components: np.ndarray) -> bool:
         """Check if four-velocity satisfies normalization constraint"""
@@ -776,8 +789,19 @@ class EnhancedEnergyDensityField(TensorAwareField):
 
     def evolution_equation(self, **kwargs: Any) -> sp.Expr:
         """Continuity equation: ∂ₜρ + ∇·(ρu) = 0"""
-        # This would be implemented with proper symbolic derivatives
-        return sp.Integer(0)  # Placeholder
+        # Create symbolic coordinates and fields
+        t, x, y, z = sp.symbols("t x y z", real=True)
+        rho = sp.Function("rho")(t, x, y, z)
+        u_t = sp.Function("u_t")(t, x, y, z)
+        u_x = sp.Function("u_x")(t, x, y, z)
+        u_y = sp.Function("u_y")(t, x, y, z)
+        u_z = sp.Function("u_z")(t, x, y, z)
+
+        # Energy density continuity equation: ∂ₜρ + ∇·(ρu) = 0
+        time_derivative = sp.diff(rho, t)
+        divergence = sp.diff(rho * u_x, x) + sp.diff(rho * u_y, y) + sp.diff(rho * u_z, z)
+
+        return time_derivative + divergence
 
 
 class EnhancedFourVelocityField(TensorAwareField):
@@ -806,8 +830,21 @@ class EnhancedFourVelocityField(TensorAwareField):
 
     def evolution_equation(self, **kwargs: Any) -> sp.Expr:
         """Four-velocity evolution from Euler equation"""
-        # This would implement the full relativistic Euler equation
-        return sp.Integer(0)  # Placeholder
+        # Four-velocity evolution: u^μ ∂_μ u^ν = -h^μν ∂_μ P/(ε+P) - κ ∇^ν T/ε
+
+        t, x, y, z = sp.symbols("t x y z", real=True)
+        u_mu = sp.Matrix([sp.Function(f"u_{i}")(t, x, y, z) for i in ["t", "x", "y", "z"]])
+        P = sp.Function("P")(t, x, y, z)  # Pressure
+        epsilon = sp.Function("epsilon")(t, x, y, z)  # Energy density
+        T = sp.Function("T")(t, x, y, z)  # Temperature
+        kappa = sp.Symbol("kappa", positive=True)  # Thermal conductivity
+
+        # Relativistic Euler equation
+        # u^μ ∂_μ u^ν = -h^μν ∂_μ P/(ε+P) - κ ∇^ν T/ε
+        pressure_force = -sp.diff(P, t) / (epsilon + P)
+        thermal_force = -kappa * sp.diff(T, t) / epsilon
+
+        return pressure_force + thermal_force
 
 
 class EnhancedShearStressField(TensorAwareField):
@@ -837,8 +874,24 @@ class EnhancedShearStressField(TensorAwareField):
 
     def evolution_equation(self, **kwargs: Any) -> sp.Expr:
         """Israel-Stewart shear evolution: τ_π ∂ₜπ^μν + π^μν = 2η σ^μν"""
-        # This would implement the full IS shear evolution equation
-        return sp.Integer(0)  # Placeholder
+        # Israel-Stewart shear stress evolution equation
+
+        t = sp.Symbol("t")
+        pi_munu = sp.Function("pi_munu")(t)  # Shear stress tensor component
+        sigma_munu = sp.Function("sigma_munu")(t)  # Shear rate tensor
+        theta = sp.Function("theta")(t)  # Expansion scalar ∇·u
+
+        # Physical parameters
+        tau_pi = sp.Symbol("tau_pi", positive=True)  # Shear relaxation time
+        eta = sp.Symbol("eta", positive=True)  # Shear viscosity
+        delta_pipi = sp.Symbol("delta_pipi", real=True)  # Non-linear coupling
+
+        # Israel-Stewart evolution: τ_π ∂ₜπ^μν + π^μν = 2η σ^μν - δ_ππ ∇^⟨μ u^ν⟩
+        relaxation_term = tau_pi * sp.diff(pi_munu, t) + pi_munu
+        source_term = 2 * eta * sigma_munu
+        nonlinear_term = delta_pipi * sigma_munu  # Simplified non-linear coupling
+
+        return relaxation_term - source_term - nonlinear_term
 
 
 class EnhancedBulkPressureField(TensorAwareField):
@@ -864,7 +917,23 @@ class EnhancedBulkPressureField(TensorAwareField):
 
     def evolution_equation(self, **kwargs: Any) -> sp.Expr:
         """Israel-Stewart bulk evolution: τ_Π ∂ₜΠ + Π = -ζ ∇·u"""
-        return sp.Integer(0)  # Placeholder
+        # Israel-Stewart bulk viscous pressure evolution
+
+        t = sp.Symbol("t")
+        Pi = sp.Function("Pi")(t)  # Bulk pressure
+        theta = sp.Function("theta")(t)  # Expansion scalar ∇·u
+
+        # Physical parameters
+        tau_Pi = sp.Symbol("tau_Pi", positive=True)  # Bulk relaxation time
+        zeta = sp.Symbol("zeta", positive=True)  # Bulk viscosity
+        delta_PiPi = sp.Symbol("delta_PiPi", real=True)  # Non-linear coupling
+
+        # Israel-Stewart bulk evolution: τ_Π ∂ₜΠ + Π = -ζ θ - τ_Π Π θ
+        relaxation_term = tau_Pi * sp.diff(Pi, t) + Pi
+        viscous_term = -zeta * theta
+        coupling_term = -delta_PiPi * Pi * theta  # Non-linear coupling
+
+        return relaxation_term - viscous_term - coupling_term
 
 
 class EnhancedHeatFluxField(TensorAwareField):
@@ -893,7 +962,25 @@ class EnhancedHeatFluxField(TensorAwareField):
 
     def evolution_equation(self, **kwargs: Any) -> sp.Expr:
         """Israel-Stewart heat flux evolution: τ_q ∂ₜq^μ + q^μ = κ ∇^μ(T/T₀)"""
-        return sp.Integer(0)  # Placeholder
+        # Israel-Stewart heat flux evolution equation
+
+        t, x, y, z = sp.symbols("t x y z", real=True)
+        q_mu = sp.Function("q_mu")(t, x, y, z)  # Heat flux vector component
+        T = sp.Function("T")(t, x, y, z)  # Temperature
+        alpha = 1 / T  # Inverse temperature
+        theta = sp.Function("theta")(t)  # Expansion scalar
+
+        # Physical parameters
+        tau_q = sp.Symbol("tau_q", positive=True)  # Heat flux relaxation time
+        kappa = sp.Symbol("kappa", positive=True)  # Thermal conductivity
+        delta_qq = sp.Symbol("delta_qq", real=True)  # Non-linear coupling
+
+        # Israel-Stewart heat flux evolution: τ_q ∂ₜq^μ + q^μ = -κ T ∇^μ α - τ_q q^μ θ
+        relaxation_term = tau_q * sp.diff(q_mu, t) + q_mu
+        thermal_gradient = -kappa * T * sp.diff(alpha, t)  # Simplified to time gradient
+        expansion_coupling = -delta_qq * q_mu * theta
+
+        return relaxation_term - thermal_gradient - expansion_coupling
 
 
 class EnhancedFieldRegistry(FieldRegistry):

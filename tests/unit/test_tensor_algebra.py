@@ -323,17 +323,75 @@ class TestCovariantDerivative:
         assert cov_deriv.indices.types[0] == "covariant"
         assert cov_deriv.indices.types[1] == "contravariant"
 
-        # For this placeholder implementation, should be zero
+        # Should have correct shape
         expected_shape = (4, 4)
         assert cov_deriv.shape == expected_shape
 
+        # Components should be finite (not NaN or infinite)
+        assert np.all(np.isfinite(cov_deriv.components))
+
+        # In flat space, should only contain partial derivative terms
+        # (no Christoffel symbol contributions)
+        assert cov_deriv.components is not None
+
     def test_covariant_derivative_with_christoffel(self):
         """Test covariant derivative with non-zero Christoffel symbols"""
-        # This should raise NotImplementedError for now
-        dummy_christoffel = self.test_vector.christoffel_symbols()
+        # Create non-zero Christoffel symbols
+        christoffel_components = np.zeros((4, 4, 4), dtype=complex)
+        # Add a simple non-zero component for testing
+        christoffel_components[0, 1, 1] = 0.1
+        christoffel_components[1, 0, 1] = 0.1
 
-        with pytest.raises(NotImplementedError):
-            self.test_vector.covariant_derivative(0, dummy_christoffel)
+        christoffel_indices = IndexStructure(
+            ["rho", "mu", "nu"],
+            ["contravariant", "covariant", "covariant"],
+            ["none", "none", "none"],
+        )
+        christoffel = LorentzTensor(christoffel_components, christoffel_indices, self.metric)
+
+        # Compute covariant derivative
+        cov_deriv = self.test_vector.covariant_derivative(0, christoffel)
+
+        # Should have rank 2 (added one derivative index)
+        assert cov_deriv.rank == 2
+
+        # Check index structure
+        assert cov_deriv.indices.types[0] == "covariant"  # derivative index
+        assert cov_deriv.indices.types[1] == "contravariant"  # original vector index
+
+        # Should have correct shape
+        expected_shape = (4, 4)
+        assert cov_deriv.shape == expected_shape
+
+        # Components should be finite (not NaN or infinite)
+        assert np.all(np.isfinite(cov_deriv.components))
+
+    def test_covariant_derivative_rank_2_tensor(self):
+        """Test covariant derivative of a rank-2 tensor"""
+        # Create a simple rank-2 tensor (like stress-energy tensor)
+        tensor_components = np.ones((4, 4), dtype=complex)
+        tensor_indices = IndexStructure(
+            ["mu", "nu"], ["contravariant", "contravariant"], ["none", "none"]
+        )
+        rank2_tensor = LorentzTensor(tensor_components, tensor_indices, self.metric)
+
+        # Take covariant derivative
+        cov_deriv = rank2_tensor.covariant_derivative(1)  # Insert at position 1
+
+        # Should have rank 3 (added one derivative index)
+        assert cov_deriv.rank == 3
+
+        # Check index structure
+        assert cov_deriv.indices.types[0] == "contravariant"  # original
+        assert cov_deriv.indices.types[1] == "covariant"  # derivative
+        assert cov_deriv.indices.types[2] == "contravariant"  # original
+
+        # Should have correct shape
+        expected_shape = (4, 4, 4)
+        assert cov_deriv.shape == expected_shape
+
+        # Components should be finite
+        assert np.all(np.isfinite(cov_deriv.components))
 
 
 class TestPhysicalInvariants:

@@ -401,8 +401,69 @@ class IsraelStewartSystem:
         Returns:
             Dictionary of linearized evolution equations
         """
-        # This would be implemented in Task 1.5 (Linearization Module)
-        raise NotImplementedError("Linearization implemented in separate module")
+        linearized_equations = {}
+
+        # Define symbolic perturbations
+        t, x, y, z = sp.symbols("t x y z", real=True)
+
+        # Background state values
+        rho_0 = background_state.get("rho", 1.0)
+        u_0 = background_state.get("u_t", 1.0)  # Time component
+        T_0 = background_state.get("T", 1.0)  # Temperature
+        P_0 = background_state.get("P", rho_0 / 3)  # Pressure
+
+        # Define perturbations
+        delta_rho = sp.Function("delta_rho")(t, x, y, z)
+        delta_u = sp.Function("delta_u")(t, x, y, z)
+        delta_pi = sp.Function("delta_pi")(t, x, y, z)
+        delta_Pi = sp.Function("delta_Pi")(t, x, y, z)
+        delta_q = sp.Function("delta_q")(t, x, y, z)
+
+        # Linearized energy density equation: δρ̇ + ρ₀ ∇·δu = 0
+        linearized_equations["delta_rho"] = sp.diff(delta_rho, t) + rho_0 * (
+            sp.diff(delta_u, x) + sp.diff(delta_u, y) + sp.diff(delta_u, z)
+        )
+
+        # Linearized four-velocity equation (Euler equation)
+        # δu̇ = -(1/(ρ₀+P₀)) ∇δP - κ₀∇δT/ε₀
+        c_s_squared = P_0 / rho_0  # Sound speed squared
+        linearized_equations["delta_u"] = (
+            sp.diff(delta_u, t)
+            + c_s_squared * sp.diff(delta_rho, x) / rho_0
+            + self.parameters.kappa * sp.diff(delta_q, x) / rho_0
+        )
+
+        # Linearized shear stress evolution
+        # τπ δπ̇ + δπ = 2η₀ δσ
+        # where δσ is the linearized shear rate
+        delta_sigma = sp.diff(delta_u, x) - sp.diff(delta_u, y) / 3  # Simplified shear rate
+        linearized_equations["delta_pi"] = (
+            self.parameters.tau_pi * sp.diff(delta_pi, t)
+            + delta_pi
+            - 2 * self.parameters.eta * delta_sigma
+        )
+
+        # Linearized bulk pressure evolution
+        # τΠ δΠ̇ + δΠ = -ζ₀ δθ
+        # where δθ = ∇·δu is the expansion perturbation
+        delta_theta = sp.diff(delta_u, x) + sp.diff(delta_u, y) + sp.diff(delta_u, z)
+        linearized_equations["delta_Pi"] = (
+            self.parameters.tau_Pi * sp.diff(delta_Pi, t)
+            + delta_Pi
+            + self.parameters.zeta * delta_theta
+        )
+
+        # Linearized heat flux evolution
+        # τq δq̇ + δq = -κ₀ ∇(δT/T₀)
+        # Approximating δT ≈ (∂T/∂ρ)₀ δρ for simplicity
+        delta_T_grad = sp.diff(delta_rho, x) / rho_0  # Simplified temperature gradient
+        linearized_equations["delta_q"] = (
+            self.parameters.tau_q * sp.diff(delta_q, t)
+            + delta_q
+            + self.parameters.kappa * delta_T_grad
+        )
+
+        return linearized_equations
 
     def __str__(self) -> str:
         """String representation"""

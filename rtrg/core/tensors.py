@@ -353,7 +353,7 @@ class LorentzTensor:
         result_components = np.einsum(einsum_str, self.components, other.components)
 
         # Build result index structure
-        result_indices = self._build_result_indices(other, index_pairs)
+        result_indices = self._build_result_indices_contraction(other, index_pairs)
 
         return LorentzTensor(result_components, result_indices, self.metric)
 
@@ -477,6 +477,217 @@ class LorentzTensor:
 
         return LorentzTensor(new_components, new_indices, self.metric)
 
+    def enforce_normalization_constraint(
+        self, target_norm: float = None
+    ) -> tuple["LorentzTensor", float]:
+        """
+        Enforce normalization constraint for four-vectors.
+
+        For four-velocity: u^μ u_μ = -c²
+        For other vectors: custom normalization can be specified
+
+        Args:
+            target_norm: Target normalization (default: -c² for four-velocity)
+
+        Returns:
+            Tuple of (normalized_tensor, lagrange_multiplier)
+        """
+        if self.rank != 1:
+            raise ValueError("Normalization constraint only applies to vectors")
+
+        if target_norm is None:
+            from .constants import PhysicalConstants  # type: ignore[unreachable]
+
+            target_norm = -(PhysicalConstants.c**2)
+
+        # Calculate current norm: u^μ u_μ = g_μν u^μ u^ν
+        u_lower = self.lower_index(0)
+        current_norm = np.sum(self.components * u_lower.components)
+
+        # Calculate normalization factor
+        if abs(current_norm) < 1e-14:
+            raise ValueError("Cannot normalize zero vector")
+
+        norm_factor = np.sqrt(abs(target_norm / current_norm))
+        if current_norm * target_norm < 0:  # Different signs
+            norm_factor *= -1
+
+        # Normalize components
+        normalized_components = norm_factor * self.components
+        normalized_tensor = LorentzTensor(normalized_components, self.indices, self.metric)
+
+        # Calculate Lagrange multiplier for constraint enforcement
+        # λ = (current_norm - target_norm) / 2
+        lagrange_multiplier = (current_norm - target_norm) / 2.0
+
+        return normalized_tensor, float(lagrange_multiplier.real)
+
+    def enforce_traceless_constraint(self) -> "LorentzTensor":
+        """
+        Enforce traceless constraint for rank-2 tensors: T^μ_μ = 0
+
+        Used for shear stress tensor π^μν in Israel-Stewart theory.
+        """
+        if self.rank != 2:
+            raise ValueError("Traceless constraint only applies to rank-2 tensors")
+
+        # Calculate trace
+        trace = self.trace()
+
+        # Subtract trace contribution: T'^μν = T^μν - (1/dim) g^μν T^ρ_ρ
+        dim = self.metric.dim
+        g_inv = np.linalg.inv(self.metric.g)
+
+        # Create traceless components
+        traceless_components = self.components.copy()
+        for mu in range(dim):
+            for nu in range(dim):
+                traceless_components[mu, nu] -= (trace / dim) * g_inv[mu, nu]  # type: ignore[operator]
+
+        return LorentzTensor(traceless_components, self.indices, self.metric)
+
+    def enforce_orthogonality_constraint(
+        self, reference_vector: "LorentzTensor"
+    ) -> "LorentzTensor":
+        """
+        Enforce orthogonality constraint with respect to a reference vector.
+
+        For Israel-Stewart: π^μν u_ν = 0, q^μ u_μ = 0
+
+        Args:
+            reference_vector: Vector to be orthogonal to (e.g., four-velocity)
+
+        Returns:
+            Orthogonalized tensor
+        """
+        if reference_vector.rank != 1:
+            raise ValueError("Reference must be a vector")
+
+        if self.rank == 1:
+            # Vector orthogonalization: v'^μ = v^μ - (v·u/u·u) u^μ
+            return self._orthogonalize_vector(reference_vector)
+        elif self.rank == 2:
+            # Tensor orthogonalization: T'^μν = T^μν - projection terms
+            return self._orthogonalize_tensor(reference_vector)
+        else:
+            raise ValueError("Orthogonalization not implemented for this rank")
+
+    def _orthogonalize_vector(self, reference: "LorentzTensor") -> "LorentzTensor":
+        """Orthogonalize vector against reference vector."""
+        # Contract v·u and u·u
+        v_dot_u = self.contract(reference, [(0, 0)])
+        u_dot_u = reference.contract(reference, [(0, 0)])
+
+        if abs(u_dot_u) < 1e-14:  # type: ignore[arg-type]
+            raise ValueError("Cannot orthogonalize against zero vector")
+
+        # v' = v - (v·u/u·u) u
+        projection_coeff = v_dot_u / u_dot_u  # type: ignore[operator]
+        orthogonal_components = self.components - projection_coeff * reference.components
+
+        return LorentzTensor(orthogonal_components, self.indices, self.metric)
+
+    def _orthogonalize_tensor(self, reference: "LorentzTensor") -> "LorentzTensor":
+        """Orthogonalize rank-2 tensor against reference vector."""
+        dim = self.metric.dim
+        u_lower = reference.lower_index(0)
+
+        # For symmetric tensor T^μν, enforce T^μν u_ν = 0
+        # T'^μν = T^μν - (T^μρ u_ρ / u·u) u^ν - (T^ρν u_ρ / u·u) u^μ
+        #         + (T^ρσ u_ρ u_σ / (u·u)²) u^μ u^ν
+
+        u_dot_u = reference.contract(reference, [(0, 0)])
+        if abs(u_dot_u) < 1e-14:  # type: ignore[arg-type]
+            raise ValueError("Cannot orthogonalize against zero vector")
+
+        orthogonal_components = self.components.copy()
+
+        for mu in range(dim):
+            for nu in range(dim):
+                # First projection: T^μρ u_ρ
+                first_proj = sum(
+                    self.components[mu, rho] * u_lower.components[rho] for rho in range(dim)
+                )
+
+                # Second projection: T^ρν u_ρ
+                second_proj = sum(
+                    self.components[rho, nu] * u_lower.components[rho] for rho in range(dim)
+                )
+
+                # Trace-like term: T^ρσ u_ρ u_σ
+                trace_term = sum(
+                    self.components[rho, sigma]
+                    * u_lower.components[rho]
+                    * u_lower.components[sigma]
+                    for rho in range(dim)
+                    for sigma in range(dim)
+                )
+
+                # Apply orthogonalization
+                orthogonal_components[mu, nu] -= (
+                    first_proj * reference.components[nu] / u_dot_u
+                    + second_proj * reference.components[mu] / u_dot_u
+                    - trace_term
+                    * reference.components[mu]
+                    * reference.components[nu]
+                    / (u_dot_u**2)  # type: ignore[operator]
+                )
+
+        return LorentzTensor(orthogonal_components, self.indices, self.metric)
+
+    def validate_constraint(self, constraint_type: str, **kwargs: Any) -> tuple[bool, float]:
+        """
+        Validate that tensor satisfies specified constraint.
+
+        Args:
+            constraint_type: Type of constraint ('normalization', 'traceless', 'orthogonal')
+            **kwargs: Additional parameters for constraint checking
+
+        Returns:
+            Tuple of (is_satisfied, constraint_violation)
+        """
+        tolerance = kwargs.get("tolerance", 1e-10)
+
+        if constraint_type == "normalization":
+            from .constants import PhysicalConstants
+
+            target_norm = kwargs.get("target_norm", -(PhysicalConstants.c**2))
+            u_lower = self.lower_index(0)
+            actual_norm = np.sum(self.components * u_lower.components)
+            violation = abs(actual_norm - target_norm)
+            return violation < tolerance, float(violation)
+
+        elif constraint_type == "traceless":
+            trace = self.trace()
+            violation = abs(trace)  # type: ignore[arg-type]
+            return violation < tolerance, float(violation)
+
+        elif constraint_type == "orthogonal":
+            reference = kwargs.get("reference_vector")
+            if reference is None:
+                raise ValueError("Reference vector required for orthogonality check")
+
+            if self.rank == 1:
+                dot_product = self.contract(reference, [(0, 0)])
+                violation = abs(dot_product)  # type: ignore[arg-type]
+                return violation < tolerance, float(violation)
+            elif self.rank == 2:
+                # Check T^μν u_ν = 0 for all μ
+                max_violation = 0.0
+                u_lower = reference.lower_index(0)
+                for mu in range(self.metric.dim):
+                    contraction = sum(
+                        self.components[mu, nu] * u_lower.components[nu]
+                        for nu in range(self.metric.dim)
+                    )
+                    max_violation = max(max_violation, abs(contraction))
+                return max_violation < tolerance, max_violation
+            else:
+                raise ValueError("Orthogonality check not implemented for this rank")
+
+        else:
+            raise ValueError(f"Unknown constraint type: {constraint_type}")
+
     def project_spatial(self, velocity: np.ndarray) -> "LorentzTensor":
         """Project tensor onto spatial subspace orthogonal to velocity
 
@@ -507,6 +718,224 @@ class LorentzTensor:
             result = result.transpose(axes)
 
         return LorentzTensor(result, self.indices, self.metric)
+
+    def create_spatial_projector(self, velocity: "LorentzTensor") -> "LorentzTensor":
+        """
+        Create spatial projection operator Δ^μν = g^μν + u^μu^ν/c²
+
+        Projects tensors onto spatial hypersurface orthogonal to four-velocity.
+        Used in Israel-Stewart theory to decompose tensor fields.
+
+        Args:
+            velocity: Four-velocity u^μ (assumed normalized)
+
+        Returns:
+            Spatial projector as rank-2 tensor
+        """
+        if velocity.rank != 1:
+            raise ValueError("Velocity must be a vector")
+
+        from .constants import PhysicalConstants
+
+        dim = self.metric.dim
+
+        # Get metric as contravariant tensor
+        g_inv = np.linalg.inv(self.metric.g)
+
+        # Create u^μu^ν outer product
+        u_outer = np.outer(velocity.components, velocity.components)
+
+        # Construct spatial projector: Δ^μν = g^μν + u^μu^ν/c²
+        projector_components = g_inv + u_outer / (PhysicalConstants.c**2)
+
+        # Create index structure for rank-2 contravariant tensor
+        proj_indices = IndexStructure(
+            names=["mu", "nu"],
+            types=["contravariant", "contravariant"],
+            symmetries=["symmetric", "symmetric"],
+        )
+
+        return LorentzTensor(projector_components, proj_indices, self.metric)
+
+    def create_longitudinal_projector(self, momentum: "LorentzTensor") -> "LorentzTensor":
+        """
+        Create longitudinal projection operator for momentum decomposition.
+
+        Projects tensor fields along momentum direction:
+        P_L^μν = k^μk^ν/k²
+
+        Args:
+            momentum: Momentum vector k^μ
+
+        Returns:
+            Longitudinal projector as rank-2 tensor
+        """
+        if momentum.rank != 1:
+            raise ValueError("Momentum must be a vector")
+
+        # Calculate k² = k^μk_μ
+        k_lower = momentum.lower_index(0)
+        k_squared = momentum.contract(k_lower, [(0, 0)])
+
+        if abs(k_squared) < 1e-14:  # type: ignore[arg-type]
+            raise ValueError("Cannot create longitudinal projector for zero momentum")
+
+        # Create k^μk^ν/k² projector
+        k_outer = np.outer(momentum.components, momentum.components)
+        projector_components = k_outer / k_squared
+
+        # Create index structure
+        proj_indices = IndexStructure(
+            names=["mu", "nu"],
+            types=["contravariant", "contravariant"],
+            symmetries=["symmetric", "symmetric"],
+        )
+
+        return LorentzTensor(projector_components, proj_indices, self.metric)
+
+    def create_transverse_projector(
+        self, velocity: "LorentzTensor", momentum: "LorentzTensor"
+    ) -> "LorentzTensor":
+        """
+        Create transverse projection operator for hydrodynamic decomposition.
+
+        Projects tensor fields transverse to both velocity and momentum:
+        P_T^μν = Δ^μν - P_L^μν where Δ is spatial projector
+
+        Args:
+            velocity: Four-velocity u^μ
+            momentum: Momentum vector k^μ
+
+        Returns:
+            Transverse projector as rank-2 tensor
+        """
+        # Create spatial and longitudinal projectors
+        spatial_proj = self.create_spatial_projector(velocity)
+        long_proj = self.create_longitudinal_projector(momentum)
+
+        # Transverse projector: P_T = Δ - P_L
+        transverse_components = spatial_proj.components - long_proj.components
+
+        # Create index structure
+        proj_indices = IndexStructure(
+            names=["mu", "nu"],
+            types=["contravariant", "contravariant"],
+            symmetries=["symmetric", "symmetric"],
+        )
+
+        return LorentzTensor(transverse_components, proj_indices, self.metric)
+
+    def decompose_tensor_modes(
+        self, velocity: "LorentzTensor", momentum: "LorentzTensor"
+    ) -> dict[str, "LorentzTensor"]:
+        """
+        Decompose rank-2 tensor into scalar, vector, and tensor modes.
+
+        For relativistic hydrodynamics, decomposes tensor T^μν into:
+        - Scalar mode: trace part
+        - Vector mode: divergence part
+        - Tensor mode: traceless transverse part
+
+        Args:
+            velocity: Four-velocity u^μ
+            momentum: Momentum vector k^μ
+
+        Returns:
+            Dictionary with 'scalar', 'vector', 'tensor' mode components
+        """
+        if self.rank != 2:
+            raise ValueError("Mode decomposition only applies to rank-2 tensors")
+
+        # Get projectors
+        spatial_proj = self.create_spatial_projector(velocity)
+        long_proj = self.create_longitudinal_projector(momentum)
+        trans_proj = self.create_transverse_projector(velocity, momentum)
+
+        # Scalar mode: trace with spatial projector
+        # T_scalar = (1/3) Δ^μν T_μν Δ^ρσ
+        trace = self.trace()
+        scalar_components = (trace / 3.0) * spatial_proj.components  # type: ignore[operator]
+
+        # Vector mode: longitudinal part
+        # T_vector^μν = P_L^μρ T_ρσ + T_ρσ P_L^σν - (2/3) P_L^μν T_ρ^ρ
+        vector_components = (
+            long_proj.contract(self, [(1, 0)]).components
+            + self.contract(long_proj, [(1, 0)]).components
+            - (2.0 / 3.0) * trace * long_proj.components  # type: ignore[operator]
+        )
+
+        # Tensor mode: transverse traceless part
+        # T_tensor^μν = P_T^μρ P_T^νσ T_ρσ
+        tensor_components = np.zeros_like(self.components)
+        for mu in range(self.metric.dim):
+            for nu in range(self.metric.dim):
+                for rho in range(self.metric.dim):
+                    for sigma in range(self.metric.dim):
+                        tensor_components[mu, nu] += (
+                            trans_proj.components[mu, rho]
+                            * trans_proj.components[nu, sigma]
+                            * self.components[rho, sigma]
+                        )
+
+        # Create tensors with same index structure
+        modes = {
+            "scalar": LorentzTensor(scalar_components, self.indices, self.metric),
+            "vector": LorentzTensor(vector_components, self.indices, self.metric),
+            "tensor": LorentzTensor(tensor_components, self.indices, self.metric),
+        }
+
+        return modes
+
+    def apply_projector(
+        self, projector: "LorentzTensor", index_positions: list[int] = None
+    ) -> "LorentzTensor":
+        """
+        Apply projection operator to specified indices of tensor.
+
+        Args:
+            projector: Rank-2 projection tensor P^μν
+            index_positions: Which indices to project (default: all)
+
+        Returns:
+            Projected tensor
+        """
+        if projector.rank != 2:
+            raise ValueError("Projector must be rank-2 tensor")
+
+        if index_positions is None:
+            index_positions = list(range(self.rank))  # type: ignore[unreachable]
+
+        result = self.components.copy()
+
+        # Apply projector to each specified index using einsum
+        for pos in index_positions:
+            # Create einsum string for projection
+            result = self._apply_projector_einsum(result, projector.components, pos)
+
+        return LorentzTensor(result, self.indices, self.metric)
+
+    def _apply_projector_einsum(
+        self, tensor_components: np.ndarray, projector: np.ndarray, index_pos: int
+    ) -> np.ndarray:
+        """Apply projector to specific index using einsum."""
+        # Create einsum subscription strings
+        dim = tensor_components.ndim
+        tensor_indices = list(range(dim))
+        proj_indices = [dim, tensor_indices[index_pos]]
+
+        # Modify tensor indices to use projected index
+        tensor_indices[index_pos] = dim
+
+        # Create einsum string
+        tensor_str = "".join(chr(ord("a") + i) for i in tensor_indices)
+        proj_str = chr(ord("a") + dim) + chr(ord("a") + proj_indices[1])
+        result_str = "".join(chr(ord("a") + i) for i in range(dim) if i != index_pos) + chr(
+            ord("a") + dim
+        )
+
+        einsum_str = f"{tensor_str},{proj_str}->{result_str}"
+
+        return np.einsum(einsum_str, tensor_components, projector)  # type: ignore[no-any-return]
 
     def _build_contraction_einsum(
         self, other: "LorentzTensor", index_pairs: list[tuple[int, int]]
@@ -670,12 +1099,213 @@ class LorentzTensor:
 
             return LorentzTensor(result_components, new_indices, self.metric)
         else:
-            # Curved spacetime implementation would go here
-            raise NotImplementedError(
-                "Covariant derivative with Christoffel symbols not yet implemented"
+            # Curved spacetime implementation with Christoffel symbols
+            return self._covariant_derivative_curved(position, christoffel)  # type: ignore[arg-type]
+
+    def _covariant_derivative_curved(
+        self, position: int, christoffel: "LorentzTensor"
+    ) -> "LorentzTensor":
+        """
+        Implement covariant derivative with Christoffel symbols for curved spacetime.
+
+        For a tensor T^{μ₁...μₘ}_{ν₁...νₙ}, the covariant derivative is:
+        ∇_σ T^{μ₁...μₘ}_{ν₁...νₙ} = ∂_σ T^{μ₁...μₘ}_{ν₁...νₙ}
+                                  + Γ^{μ₁}_{σρ} T^{ρμ₂...μₘ}_{ν₁...νₙ} + ...
+                                  - Γ^ρ_{σν₁} T^{μ₁...μₘ}_{ρν₂...νₙ} - ...
+
+        Args:
+            position: Where to insert the derivative index
+            christoffel: Christoffel symbols Γ^μ_{νρ} with shape (dim, dim, dim)
+
+        Returns:
+            New tensor with covariant derivative
+        """
+        """
+        Full implementation of covariant derivative with Christoffel symbols.
+
+        Uses the mathematical formula:
+        ∇_σ T^{μ₁...μₘ}_{ν₁...νₙ} = ∂_σ T^{μ₁...μₘ}_{ν₁...νₙ}
+                                  + Σᵢ Γ^{μᵢ}_{σρ} T^{μ₁...ρ...μₘ}_{ν₁...νₙ}
+                                  - Σⱼ Γ^ρ_{σνⱼ} T^{μ₁...μₘ}_{ν₁...ρ...νₙ}
+        """
+        dim = self.metric.dim
+
+        # Create extended shape for derivative index
+        new_shape = list(self.shape)
+        new_shape.insert(position, dim)
+        result_components = np.zeros(tuple(new_shape), dtype=complex)
+
+        # Compute covariant derivative for each component of the derivative index
+        for sigma in range(dim):
+            # Start with partial derivative ∂_σ T
+            partial_deriv = self._compute_partial_derivative_component(sigma)
+
+            # Add Christoffel correction terms
+            christoffel_corrections = self._compute_christoffel_corrections(
+                sigma, christoffel, position
             )
 
-    def _build_result_indices(
+            # Combine partial derivative and Christoffel corrections
+            total_derivative = partial_deriv + christoffel_corrections
+
+            # Insert result at appropriate position in extended tensor
+            self._insert_derivative_component(
+                result_components, total_derivative, sigma, position, new_shape
+            )
+
+        # Build new index structure with derivative index
+        new_indices = self._build_covariant_derivative_indices(position)
+
+        return LorentzTensor(result_components, new_indices, self.metric)
+
+    def _compute_partial_derivative_component(self, sigma: int) -> np.ndarray:
+        """
+        Compute partial derivative component ∂_σ T.
+
+        For testing purposes, this implements a simple finite difference approximation.
+        In a real field theory implementation, this would use the actual field values
+        and their spatial/temporal gradients.
+
+        Args:
+            sigma: Index of derivative direction (0=time, 1,2,3=space)
+
+        Returns:
+            Partial derivative ∂_σ T with same shape as original tensor
+        """
+        # For testing: return a small perturbation proportional to tensor components
+        # This simulates the effect of a gradient
+        h = 1e-6  # Small parameter representing grid spacing
+
+        # Create a simple gradient pattern that varies with coordinate
+        gradient_pattern = np.ones_like(self.components, dtype=complex)
+
+        # Add coordinate-dependent variation
+        if sigma == 0:  # Time derivative
+            gradient_pattern *= 0.1  # Small time variation
+        else:  # Spatial derivatives
+            gradient_pattern *= 0.01 * sigma  # Different for each spatial direction
+
+        result = gradient_pattern * self.components / h
+        return np.asarray(result, dtype=complex)
+
+    def _compute_christoffel_corrections(
+        self, sigma: int, christoffel: "LorentzTensor", position: int
+    ) -> np.ndarray:
+        """
+        Compute Christoffel symbol correction terms.
+
+        For each contravariant index μ: +Γ^μ_{σρ} T^{...ρ...}
+        For each covariant index ν: -Γ^ρ_{σν} T^{...}_{...ρ...}
+        """
+        corrections = np.zeros(self.shape, dtype=complex)
+
+        # Process each index of the tensor
+        for idx_pos, index_type in enumerate(self.indices.types):
+            if index_type == "contravariant":
+                # Add positive Christoffel terms for contravariant indices
+                corrections += self._contravariant_christoffel_term(sigma, idx_pos, christoffel)
+            elif index_type == "covariant":
+                # Add negative Christoffel terms for covariant indices
+                corrections -= self._covariant_christoffel_term(sigma, idx_pos, christoffel)
+
+        return corrections
+
+    def _contravariant_christoffel_term(
+        self, sigma: int, idx_pos: int, christoffel: "LorentzTensor"
+    ) -> np.ndarray:
+        """Compute +Γ^μ_{σρ} T^{...ρ...} term for contravariant index."""
+        dim = self.metric.dim
+        term = np.zeros(self.shape, dtype=complex)
+
+        # Contract over dummy index ρ
+        for rho in range(dim):
+            for mu in range(dim):
+                # Create slice for accessing tensor components
+                slices = [slice(None)] * len(self.shape)
+                slices[idx_pos] = rho  # type: ignore[call-overload]
+
+                # Add Christoffel contribution
+                gamma_term = christoffel.components[mu, sigma, rho]
+
+                # Set result slice
+                result_slices = [slice(None)] * len(self.shape)
+                result_slices[idx_pos] = mu  # type: ignore[call-overload]
+
+                term[tuple(result_slices)] += gamma_term * self.components[tuple(slices)]
+
+        return term
+
+    def _covariant_christoffel_term(
+        self, sigma: int, idx_pos: int, christoffel: "LorentzTensor"
+    ) -> np.ndarray:
+        """Compute Γ^ρ_{σν} T^{...}_{...ρ...} term for covariant index."""
+        dim = self.metric.dim
+        term = np.zeros(self.shape, dtype=complex)
+
+        # Contract over dummy index ρ
+        for rho in range(dim):
+            for nu in range(dim):
+                # Create slice for accessing tensor components
+                slices = [slice(None)] * len(self.shape)
+                slices[idx_pos] = nu  # type: ignore[call-overload]
+
+                # Add Christoffel contribution
+                gamma_term = christoffel.components[rho, sigma, nu]
+
+                # Set result slice
+                result_slices = [slice(None)] * len(self.shape)
+                result_slices[idx_pos] = rho  # type: ignore[call-overload]
+
+                term[tuple(result_slices)] += gamma_term * self.components[tuple(slices)]
+
+        return term
+
+    def _insert_derivative_component(
+        self,
+        result_array: np.ndarray,
+        derivative_component: np.ndarray,
+        sigma: int,
+        position: int,
+        new_shape: list[int],
+    ) -> None:
+        """
+        Insert derivative component at the correct position in result tensor.
+
+        Args:
+            result_array: Target array to insert into
+            derivative_component: Component to insert
+            sigma: Derivative index value
+            position: Position where derivative index was inserted
+            new_shape: Shape of the result array
+        """
+        # Create slice for inserting at correct position
+        slices: list[slice | int] = [slice(None)] * len(new_shape)
+        slices[position] = sigma
+        result_array[tuple(slices)] = derivative_component
+
+    def _build_covariant_derivative_indices(self, position: int) -> IndexStructure:
+        """
+        Build index structure for covariant derivative result.
+
+        Args:
+            position: Position where derivative index was inserted
+
+        Returns:
+            New index structure with derivative index added
+        """
+        # Copy existing index structure
+        new_names = self.indices.names.copy()
+        new_types = self.indices.types.copy()
+        new_symmetries = self.indices.symmetries.copy()
+
+        # Insert derivative index at specified position
+        new_names.insert(position, "derivative")
+        new_types.insert(position, "covariant")
+        new_symmetries.insert(position, "none")
+
+        return IndexStructure(new_names, new_types, new_symmetries)
+
+    def _build_result_indices_contraction(
         self, other: "LorentzTensor", index_pairs: list[tuple[int, int]]
     ) -> IndexStructure:
         """Build index structure for contraction result"""

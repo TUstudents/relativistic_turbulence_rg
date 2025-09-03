@@ -425,7 +425,7 @@ class TestPhysicalProperties:
             assert value > 0
 
         # Sound speed squared should match thermodynamic relation
-        expected_cs2 = system.parameters.equilibrium_pressure / system.background.rho
+        expected_cs2 = system.background.pressure / system.background.rho
         assert abs(critical_params["sound_speed_squared"] - expected_cs2) < 1e-12
 
     def test_sound_speed_calculation(self, reference_system):
