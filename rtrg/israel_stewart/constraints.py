@@ -74,7 +74,7 @@ def tt_projector(u: np.ndarray, metric: Metric | None = None) -> np.ndarray:
     term1 = 0.5 * (np.einsum("ma,nb->mnab", Delta, Delta) + np.einsum("mb,na->mnab", Delta, Delta))
     term2 = (1.0 / 3.0) * np.einsum("mn,ab->mnab", Delta, Delta)
     P = term1 - term2
-    return P
+    return np.asarray(P, dtype=float)
 
 
 def is_symmetric_traceless_spatial(
