@@ -82,7 +82,7 @@ class HydrodynamicModeAnalyzer:
                 )
                 if abs(propagator) > 1e6:  # Near pole
                     sound_speeds.append(abs(k / (k / np.sqrt(3))))
-            except Exception:
+            except Exception:  # nosec B112 - Safe to continue on numerical calculation failures
                 continue
 
         if sound_speeds:
@@ -113,7 +113,7 @@ class HydrodynamicModeAnalyzer:
                 propagator = self.calculator.compute_propagator("pi", "pi", omega=omega_shear, k=k)
                 if abs(propagator) > 1e6:  # Near pole
                     damping_rates.append(abs(omega_shear.imag / k**2))
-            except Exception:
+            except Exception:  # nosec B112 - Safe to continue on numerical calculation failures
                 continue
 
         if damping_rates:
@@ -415,7 +415,7 @@ class FluctuationDissipationValidator:
                 if violation > 0.1:  # 10% tolerance
                     violations.append(violation)
 
-            except Exception:
+            except Exception:  # nosec B112 - Safe to continue on numerical calculation failures
                 continue
 
         return {

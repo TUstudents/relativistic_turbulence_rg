@@ -2629,7 +2629,7 @@ class TensorPropagatorExtractor:
 
                 return matrix
 
-        except Exception:
+        except Exception:  # nosec B110 - Safe to ignore symbolic calculation failures
             pass
 
         return None

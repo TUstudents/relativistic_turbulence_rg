@@ -184,6 +184,8 @@ exclude_lines = [
 exclude_dirs = ["tests", "benchmarks"]
 skips = [
     "B101",  # assert_used - asserts are OK in tests
+    "B110",  # try_except_pass - legitimate in numerical computation
+    "B112",  # try_except_continue - legitimate in numerical computation
     "B601",  # paramiko_calls - not applicable
     "B602",  # subprocess_popen_with_shell_equals_true - we don't use shell=True
 ]

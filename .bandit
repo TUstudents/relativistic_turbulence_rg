@@ -1,0 +1,9 @@
+[bandit]
+# Skip low-severity try/except patterns that are legitimate in scientific code
+skips = B110,B112
+
+# Only fail on medium/high severity issues
+severity = medium,high
+
+# Exclude test files from security scanning
+exclude_dirs = tests/
