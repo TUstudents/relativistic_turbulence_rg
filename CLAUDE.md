@@ -96,6 +96,7 @@ The project follows a modular scientific computing architecture organized around
 - `tests/`: Test suite organized by type (unit, integration, benchmarks)
 - `docs/`: Documentation split into theory, API reference, and tutorials
 - `plan/`: Design documents and implementation roadmaps
+- `open_issues.md`: Centralized tracking of known bugs, inconsistencies, and technical debt
 
 ### Key Dependencies
 - Scientific computing: `numpy`, `scipy`, `sympy` for mathematical operations
@@ -120,3 +121,30 @@ The project follows a modular scientific computing architecture organized around
 - **Professional tone**: Avoid flowery language or excessive detail
 - **Action-oriented**: Start with imperative verbs (Fix, Add, Remove, Update)
 - **Technical standard**: Follow conventional commit format when applicable
+
+## Issue Tracking
+
+The project uses `open_issues.md` as a centralized document to track known bugs, inconsistencies, and technical debt that require future attention.
+
+### Issue Categories and Priority System
+- **Critical Issues**: High-priority bugs that affect core functionality, numerical accuracy, or theoretical correctness
+- **Minor Issues**: Lower-priority items including documentation gaps, missing test coverage, and code quality improvements
+
+### Issue Status Tracking
+- **Open**: Identified but not yet addressed
+- **Partially Fixed**: Some progress made but not fully resolved
+- **✅ Fixed**: Completed and moved to "Recent Fixes" section with commit reference
+
+### Adding New Issues
+When documenting new issues, include:
+- **File path and line numbers** for precise location reference
+- **Status and Priority** assessment based on impact
+- **Evidence and examples** demonstrating the issue
+- **Impact assessment** on functionality and dependent systems
+- **Proposed fixes** where applicable
+
+### Development Workflow
+- **During development**: Update open_issues.md when discovering new bugs or inconsistencies
+- **When fixing issues**: Move from "Open" to "✅ Fixed" status and reference commit hash
+- **Code review**: Check open_issues.md for related known issues before implementing fixes
+- **Testing**: Verify that fixes don't introduce regressions in related functionality

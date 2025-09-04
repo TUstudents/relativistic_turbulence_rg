@@ -543,8 +543,12 @@ class MSRJDAction:
         u_norm_constraint = lambda_u * (u_mu * u_mu + PhysicalConstants.c**2)
         constraint_action += u_norm_constraint
 
-        # Shear stress tracelessness: λ_π(π^μ_μ)
-        pi_trace = self.fields["pi"][mu_idx, mu_idx]  # Contraction over repeated indices
+        # Shear stress tracelessness: λ_π(g^{μν} π_{μν})
+        nu_idx = symbols("nu", integer=True)
+        g_inv = IndexedBase("g_inv")  # Inverse metric g^{μν}
+        pi_trace = (
+            g_inv[mu_idx, nu_idx] * self.fields["pi"][mu_idx, nu_idx]
+        )  # Proper metric contraction
         trace_constraint = lambda_pi * pi_trace
         constraint_action += trace_constraint
 

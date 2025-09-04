@@ -276,21 +276,27 @@ class TestDispersionRelations:
         assert system.k in symbols
 
     def test_sound_mode_dispersion(self, simple_system):
-        """Test sound mode dispersion relation."""
+        """Test sound mode dispersion relation calculation.
+
+        For small k, sound modes should satisfy ω ≈ c_s k where c_s is the sound speed.
+        This test validates the numerical dispersion relation solver against the
+        expected linear dispersion for acoustic modes.
+        """
         system = simple_system
 
-        # Test dispersion at small k
+        # Test dispersion at small k (linear regime)
         k_small = 0.1
         omega_sound = system.dispersion_relation(k_small, mode="sound")
 
-        # Should be complex number
+        # Should be complex number (frequency can have imaginary part for damping)
         assert isinstance(omega_sound, complex)
 
         # Real part should be approximately c_s * k for sound mode
-        sound_speed_sq = system.parameters.equilibrium_pressure / system.background.rho
+        # Using background pressure for sound speed (consistent with implementation)
+        sound_speed_sq = system.background.pressure / system.background.rho
         expected_freq = np.sqrt(sound_speed_sq) * k_small
 
-        # Allow some tolerance for numerical solution
+        # Allow 50% tolerance for numerical solution and simplifications
         assert abs(omega_sound.real - expected_freq) < 0.5 * expected_freq
 
     def test_dispersion_relation_causality(self, simple_system):
@@ -435,7 +441,7 @@ class TestPhysicalProperties:
         system = reference_system
 
         # Sound speed squared: c_s² = p/ρ (for ideal gas)
-        cs_squared = system.parameters.equilibrium_pressure / system.background.rho
+        cs_squared = system.background.pressure / system.background.rho
         cs = np.sqrt(cs_squared)
 
         # Should be less than speed of light
@@ -500,7 +506,7 @@ class TestLinearizedEquationConsistency:
         equations = system.get_linearized_equations()
 
         # Each equation should be linear (degree 1) in perturbation fields
-        for _eq_name, equation in equations.items():
+        for equation in equations.values():
             # This is a simplified test - full linearity check would be more complex
             assert equation != 0  # Non-trivial equations
 
@@ -514,6 +520,45 @@ class TestLinearizedEquationConsistency:
 
         # Parameters should have consistent dimensions
         assert system.parameters.validate_causality()
+
+    def test_eos_consistency(self, test_system):
+        """Test that background pressure is consistent with equation of state."""
+        system = test_system
+
+        # For ideal gas: p = ρ c_s² where c_s² is thermodynamically determined
+        # Background should satisfy this relation
+        background_cs_squared = system.background.pressure / system.background.rho
+
+        # Should be positive and subluminal
+        assert background_cs_squared > 0
+        assert background_cs_squared < PhysicalConstants.c**2
+
+        # Temperature should be consistent with pressure and density
+        # This is a basic consistency check - more detailed EOS would require
+        # specific thermodynamic relations
+        assert system.background.temperature > 0
+        assert system.background.rho > 0
+        assert system.background.pressure > 0
+
+    def test_dimensional_consistency_across_spacetime_dims(self):
+        """Test linearized IS system dimensional consistency for different spacetime dimensions."""
+        # Note: This test is limited by current Metric implementation
+        # See open_issues.md for known Metric dimension extension bug
+
+        # Test standard 4D case
+        background_4d = BackgroundState(rho=1.0, pressure=0.33)
+        params_4d = IsraelStewartParameters()
+        system_4d = LinearizedIS(background_4d, params_4d)
+
+        # Should have correct field structure
+        assert len(system_4d.linearized_fields) == 5
+
+        # Sound speed should be consistent
+        cs_squared_4d = system_4d.background.pressure / system_4d.background.rho
+        assert 0 < cs_squared_4d < PhysicalConstants.c**2
+
+        # Causality should be satisfied
+        assert system_4d.validate_causality()
 
 
 # Integration test

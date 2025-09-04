@@ -234,9 +234,10 @@ class IsraelStewartSystem:
         )
         constraints.append(u_norm_constraint)
 
-        # Shear stress tracelessness: π^μ_μ = 0
+        # Shear stress tracelessness: g^{μν} π_{μν} = 0
         pi_munu = sp.IndexedBase("pi")
-        trace_constraint = sp.Sum(pi_munu[mu, mu], (mu, 0, 3))
+        g_inv = sp.IndexedBase("g_inv")
+        trace_constraint = sp.Sum(g_inv[mu, nu] * pi_munu[mu, nu], (mu, 0, 3), (nu, 0, 3))
         constraints.append(trace_constraint)
 
         # Shear stress spatial orthogonality: u_μ π^{μν} = 0
