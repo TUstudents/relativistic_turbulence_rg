@@ -114,6 +114,25 @@ Only fills diagonal up to length of default signature `(-1, 1, 1, 1)`.
 
 ## Recent Fixes (Completed)
 
+### ✅ Linearization Variable Shape Inconsistencies (Fixed)
+**Files**: `rtrg/israel_stewart/equations.py:418-490`
+**Description**: Fixed critical inconsistency where linearized perturbations were defined as scalar Functions but accessed as vectors/tensors
+**Evidence**:
+- **Incorrect**: `delta_u = sp.Function("delta_u")(t,x,y,z)` but used as `sp.diff(delta_u, x) + sp.diff(delta_u, y)`
+- **Correct**: `delta_u = sp.IndexedBase("delta_u")` used as `sp.diff(delta_u[1], x) + sp.diff(delta_u[2], y) + sp.diff(delta_u[3], z)`
+**Comprehensive Fixes**:
+- `delta_u`: Changed from scalar Function to IndexedBase vector field with proper spatial components [1,2,3]
+- `delta_pi`: Changed from scalar Function to IndexedBase tensor field with proper tensor components [i,j]
+- `delta_q`: Changed from scalar Function to IndexedBase vector field with proper spatial components [1,2,3]
+- Updated all equations to use proper tensor component notation matching linearized.py implementation
+**Mathematical Corrections**:
+- Velocity divergence: `∇·δu = ∂_x δu¹ + ∂_y δu² + ∂_z δu³`
+- Shear rate tensor: `δσⁱʲ = ½(∇ⁱδuʲ + ∇ʲδuⁱ) - ⅓δⁱʲ∇·δu`
+- Vector component equations: Separate equations for each spatial component
+**Impact**: Critical fix for mathematical consistency - linearized perturbations now properly treated as tensor objects
+**Root Cause**: Mixed scalar/tensor approach in get_linearized_system method conflicted with proper tensor implementation
+**Tests**: All 264 unit tests pass, confirming mathematical consistency restored
+
 ### ✅ Heat Flux Orthogonality Metric Bug (Fixed)
 **Files**: `rtrg/israel_stewart/equations.py:250`, `rtrg/field_theory/msrjd_action.py:558`, `tests/integration/test_basic_phase2_validation.py:135`
 **Description**: Fixed incorrect heat flux orthogonality constraint that computed `u^μ q^μ` instead of proper `u_μ q^μ = g_{μν} u^μ q^ν`

@@ -413,56 +413,81 @@ class IsraelStewartSystem:
         T_0 = background_state.get("T", 1.0)  # Temperature
         P_0 = background_state.get("P", rho_0 / 3)  # Pressure
 
-        # Define perturbations
-        delta_rho = sp.Function("delta_rho")(t, x, y, z)
-        delta_u = sp.Function("delta_u")(t, x, y, z)
-        delta_pi = sp.Function("delta_pi")(t, x, y, z)
-        delta_Pi = sp.Function("delta_Pi")(t, x, y, z)
-        delta_q = sp.Function("delta_q")(t, x, y, z)
+        # Define perturbations with proper tensor structure
+        delta_rho = sp.Function("delta_rho")(t, x, y, z)  # Scalar field
+        delta_u = sp.IndexedBase("delta_u")  # Vector field: δu^i
+        delta_pi = sp.IndexedBase("delta_pi")  # Tensor field: δπ^{ij}
+        delta_Pi = sp.Function("delta_Pi")(t, x, y, z)  # Scalar field
+        delta_q = sp.IndexedBase("delta_q")  # Vector field: δq^i
 
         # Linearized energy density equation: δρ̇ + ρ₀ ∇·δu = 0
-        linearized_equations["delta_rho"] = sp.diff(delta_rho, t) + rho_0 * (
-            sp.diff(delta_u, x) + sp.diff(delta_u, y) + sp.diff(delta_u, z)
+        # Velocity divergence: ∇·δu = ∂_x δu^1 + ∂_y δu^2 + ∂_z δu^3
+        velocity_divergence = (
+            sp.diff(delta_u[1], x) + sp.diff(delta_u[2], y) + sp.diff(delta_u[3], z)
         )
+        linearized_equations["delta_rho"] = sp.diff(delta_rho, t) + rho_0 * velocity_divergence
 
-        # Linearized four-velocity equation (Euler equation)
-        # δu̇ = -(1/(ρ₀+P₀)) ∇δP - κ₀∇δT/ε₀
+        # Linearized four-velocity equation (Euler equation) - spatial components
+        # For each spatial component i: ρ₀ δu̇^i = -∇^i δP + thermal/viscous terms
         c_s_squared = P_0 / rho_0  # Sound speed squared
-        linearized_equations["delta_u"] = (
-            sp.diff(delta_u, t)
-            + c_s_squared * sp.diff(delta_rho, x) / rho_0
-            + self.parameters.kappa * sp.diff(delta_q, x) / rho_0
-        )
 
-        # Linearized shear stress evolution
-        # τπ δπ̇ + δπ = 2η₀ δσ
-        # where δσ is the linearized shear rate
-        delta_sigma = sp.diff(delta_u, x) - sp.diff(delta_u, y) / 3  # Simplified shear rate
-        linearized_equations["delta_pi"] = (
-            self.parameters.tau_pi * sp.diff(delta_pi, t)
-            + delta_pi
-            - 2 * self.parameters.eta * delta_sigma
-        )
+        # Spatial momentum equations (i = 1, 2, 3 for x, y, z components)
+        coords = [x, y, z]
+        for i, coord in enumerate(coords, 1):
+            linearized_equations[f"delta_u_{i}"] = (
+                sp.diff(delta_u[i], t)
+                + c_s_squared * sp.diff(delta_rho, coord) / rho_0
+                + self.parameters.kappa * sp.diff(delta_q[i], coord) / rho_0
+            )
+
+        # Linearized shear stress evolution - tensor components
+        # τπ δπ̇^{ij} + δπ^{ij} = 2η₀ δσ^{ij}
+        # Shear rate tensor: δσ^{ij} = ½(∇^i δu^j + ∇^j δu^i) - ⅓δ^{ij} ∇·δu
+
+        # Compute shear stress evolution for each tensor component
+        for i in range(1, 4):  # Spatial indices 1, 2, 3
+            coord_i = coords[i - 1]  # x, y, z coordinates
+            for j in range(i, 4):  # Only upper triangular (symmetric tensor)
+                coord_j = coords[j - 1]
+
+                # Symmetric velocity gradient: ½(∇^i δu^j + ∇^j δu^i)
+                symmetric_grad = sp.Rational(1, 2) * (
+                    sp.diff(delta_u[j], coord_i) + sp.diff(delta_u[i], coord_j)
+                )
+
+                # Traceless part: subtract ⅓δ^{ij} ∇·δu
+                if i == j:  # Diagonal terms
+                    delta_sigma_ij = symmetric_grad - velocity_divergence / 3
+                else:  # Off-diagonal terms
+                    delta_sigma_ij = symmetric_grad
+
+                linearized_equations[f"delta_pi_{i}_{j}"] = (
+                    self.parameters.tau_pi * sp.diff(delta_pi[i, j], t)
+                    + delta_pi[i, j]
+                    - 2 * self.parameters.eta * delta_sigma_ij
+                )
 
         # Linearized bulk pressure evolution
         # τΠ δΠ̇ + δΠ = -ζ₀ δθ
-        # where δθ = ∇·δu is the expansion perturbation
-        delta_theta = sp.diff(delta_u, x) + sp.diff(delta_u, y) + sp.diff(delta_u, z)
+        # where δθ = ∇·δu is the expansion perturbation (already computed above)
         linearized_equations["delta_Pi"] = (
             self.parameters.tau_Pi * sp.diff(delta_Pi, t)
             + delta_Pi
-            + self.parameters.zeta * delta_theta
+            + self.parameters.zeta * velocity_divergence
         )
 
-        # Linearized heat flux evolution
-        # τq δq̇ + δq = -κ₀ ∇(δT/T₀)
+        # Linearized heat flux evolution - vector components
+        # τq δq̇^i + δq^i = -κ₀ ∇^i(δT/T₀)
         # Approximating δT ≈ (∂T/∂ρ)₀ δρ for simplicity
-        delta_T_grad = sp.diff(delta_rho, x) / rho_0  # Simplified temperature gradient
-        linearized_equations["delta_q"] = (
-            self.parameters.tau_q * sp.diff(delta_q, t)
-            + delta_q
-            + self.parameters.kappa * delta_T_grad
-        )
+
+        # Heat flux equations for each spatial component
+        for i, coord in enumerate(coords, 1):
+            delta_T_grad_i = sp.diff(delta_rho, coord) / rho_0  # Temperature gradient component
+            linearized_equations[f"delta_q_{i}"] = (
+                self.parameters.tau_q * sp.diff(delta_q[i], t)
+                + delta_q[i]
+                + self.parameters.kappa * delta_T_grad_i
+            )
 
         return linearized_equations
 
