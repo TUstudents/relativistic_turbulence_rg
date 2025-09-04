@@ -38,6 +38,7 @@ References:
 """
 
 from dataclasses import dataclass
+from functools import cached_property
 
 import numpy as np
 import sympy as sp
@@ -83,18 +84,35 @@ class BackgroundState:
     q: list[float] | None = None  # Heat flux vector
 
     def __post_init__(self) -> None:
-        """Initialize default values and validate background state."""
+        """Initialize default values."""
         if self.u is None:
             self.u = [PhysicalConstants.c, 0.0, 0.0, 0.0]  # Fluid at rest
         if self.q is None:
             self.q = [0.0, 0.0, 0.0, 0.0]  # No heat flux
 
-        # Validate four-velocity normalization
-        u_norm_sq = -(self.u[0] ** 2) + sum(self.u[i] ** 2 for i in range(1, 4))
+    def validate_four_velocity_normalization(self, metric: Metric | None = None) -> None:
+        """
+        Validate four-velocity normalization using proper metric tensor.
+
+        Computes u^μ u_μ = g_{μν} u^μ u^ν and checks that it equals -c².
+
+        Args:
+            metric: Spacetime metric tensor. If None, defaults to Minkowski metric.
+
+        Raises:
+            ValueError: If four-velocity is not properly normalized
+        """
+        if metric is None:
+            metric = Metric()  # Default Minkowski metric
+
+        u_array = np.array(self.u)
+        # Compute u^μ u_μ = g_{μν} u^μ u^ν
+        u_norm_sq = np.dot(u_array, metric.g @ u_array)
         expected_norm = -(PhysicalConstants.c**2)
+
         if abs(u_norm_sq - expected_norm) > 1e-10:
             raise ValueError(
-                f"Four-velocity not normalized: u·u = {u_norm_sq}, expected {expected_norm}"
+                f"Four-velocity not normalized: u·u = {u_norm_sq:.6e}, expected {expected_norm:.6e}"
             )
 
     def validate_equilibrium(self) -> bool:
@@ -221,6 +239,9 @@ class LinearizedIS:
         self.metric = metric or Metric()
         # Equation of state (default conformal)
         self.eos: EOS = eos or ConformalEOS()
+
+        # Validate four-velocity normalization with proper metric
+        self.background.validate_four_velocity_normalization(self.metric)
 
         # Validate background equilibrium
         if not background_state.validate_equilibrium():
@@ -628,6 +649,68 @@ class LinearizedIS:
 
         return True
 
+    @cached_property
+    def stability_status(self) -> bool:
+        """
+        Cached linear stability status.
+
+        This property caches the result of the expensive stability calculation
+        so it's only computed once. Use this instead of is_linearly_stable()
+        when you need the stability information multiple times.
+
+        Returns:
+            True if system is linearly stable (all modes have Im(ω) ≤ 0)
+        """
+        return self.is_linearly_stable()
+
+    def get_stability_summary(
+        self, k_range: tuple[float, float] = (0.1, 10.0), num_points: int = 20
+    ) -> dict[str, bool | float | list]:
+        """
+        Get detailed stability analysis summary.
+
+        This method provides comprehensive stability information including
+        the overall stability status, maximum growth rates, and sample
+        dispersion relations. Use this when you need detailed stability
+        analysis for debugging or research.
+
+        Args:
+            k_range: Range of wave numbers to analyze (k_min, k_max)
+            num_points: Number of k values to sample for analysis
+
+        Returns:
+            Dictionary with keys:
+            - 'stable': Overall linear stability (bool)
+            - 'max_growth_rate': Maximum imaginary frequency found (float)
+            - 'unstable_modes': List of (k, omega) pairs for unstable modes
+            - 'sample_frequencies': Sample dispersion relations for analysis
+        """
+        k_values = np.linspace(k_range[0], k_range[1], num_points)
+        max_growth_rate = 0.0
+        unstable_modes = []
+        sample_frequencies = []
+
+        for k_val in k_values:
+            for mode in ["sound", "diffusive"]:
+                try:
+                    omega = self.dispersion_relation(k_val, mode)
+                    sample_frequencies.append((k_val, mode, omega))
+
+                    if omega.imag > 1e-10:  # Unstable mode found
+                        unstable_modes.append((k_val, omega))
+                        max_growth_rate = max(max_growth_rate, omega.imag)
+
+                except Exception:
+                    # Skip modes that fail to compute
+                    continue
+
+        return {
+            "stable": len(unstable_modes) == 0,
+            "max_growth_rate": max_growth_rate,
+            "unstable_modes": unstable_modes,
+            "sample_frequencies": sample_frequencies,
+        }
+
     def __str__(self) -> str:
         """String representation"""
-        return f"LinearizedIS(background={self.background}, stable={self.is_linearly_stable()})"
+        return f"LinearizedIS(background={self.background})"

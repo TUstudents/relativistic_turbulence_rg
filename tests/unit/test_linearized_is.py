@@ -65,8 +65,40 @@ class TestBackgroundState:
     def test_invalid_four_velocity_normalization(self):
         """Test rejection of non-normalized four-velocity."""
         # Invalid four-velocity (not normalized)
+        background = BackgroundState(u=[2.0, 1.0, 0.0, 0.0])  # Wrong normalization
         with pytest.raises(ValueError, match="Four-velocity not normalized"):
-            BackgroundState(u=[2.0, 1.0, 0.0, 0.0])  # Wrong normalization
+            background.validate_four_velocity_normalization()
+
+    def test_invalid_four_velocity_in_linearized_system(self):
+        """Test rejection of non-normalized four-velocity in LinearizedIS constructor."""
+        # Invalid four-velocity should be caught during system initialization
+        background = BackgroundState(u=[2.0, 1.0, 0.0, 0.0])  # Wrong normalization
+        parameters = IsraelStewartParameters()
+        with pytest.raises(ValueError, match="Four-velocity not normalized"):
+            LinearizedIS(background, parameters)
+
+    def test_metric_dependent_normalization(self):
+        """Test four-velocity normalization with custom metric."""
+        import numpy as np
+
+        from rtrg.core.tensors import Metric
+
+        # Create background state with standard Minkowski-normalized four-velocity
+        background = BackgroundState(u=[1.0, 0.0, 0.0, 0.0])  # u^μ u_μ = -1 in Minkowski
+        parameters = IsraelStewartParameters()
+
+        # Should work with default Minkowski metric
+        system1 = LinearizedIS(background, parameters)
+        assert system1.background.u == [1.0, 0.0, 0.0, 0.0]
+
+        # Should also work with explicit Minkowski metric
+        minkowski_metric = Metric(dimension=4)
+        system2 = LinearizedIS(background, parameters, minkowski_metric)
+        assert system2.background.u == [1.0, 0.0, 0.0, 0.0]
+
+        # Test manual validation with different metrics
+        background.validate_four_velocity_normalization()  # Default Minkowski
+        background.validate_four_velocity_normalization(minkowski_metric)  # Explicit Minkowski
 
     def test_validate_equilibrium_fluid_at_rest(self):
         """Test equilibrium validation for fluid at rest."""

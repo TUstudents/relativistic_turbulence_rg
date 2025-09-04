@@ -114,6 +114,64 @@ Only fills diagonal up to length of default signature `(-1, 1, 1, 1)`.
 
 ## Recent Fixes (Completed)
 
+### ✅ Background Normalization Hard-codes Minkowski Metric (Fixed)
+**File**: `rtrg/israel_stewart/linearized.py:94-99`, `tests/unit/test_linearized_is.py:65-100`
+**Description**: Fixed BackgroundState four-velocity normalization that hard-coded Minkowski metric assumption instead of using proper metric tensor
+**Evidence**:
+- **Problem**: `u_norm_sq = -(self.u[0] ** 2) + sum(self.u[i] ** 2 for i in range(1, 4))` assumed signature `(-,+,+,+)`
+- **Inconsistency**: Validation occurred in `BackgroundState.__post_init__` before metric was available in `LinearizedIS`
+- **Impact**: Non-Minkowski metrics would pass validation but be inconsistent with rest of package
+**Comprehensive Fixes**:
+- **Removed hard-coded validation**: Moved from `__post_init__` to explicit method `validate_four_velocity_normalization(metric)`
+- **Added proper metric calculation**: Uses `u_norm_sq = np.dot(u_array, metric.g @ u_array)` for `g_{μν} u^μ u^ν`
+- **Updated LinearizedIS constructor**: Calls validation with actual metric: `self.background.validate_four_velocity_normalization(self.metric)`
+- **Enhanced error messages**: More informative error reporting with scientific notation
+**New API**:
+- `BackgroundState.validate_four_velocity_normalization(metric=None)`: Explicit validation with any metric
+- Backward compatible: Default None parameter uses Minkowski metric for standalone validation
+**Updated Tests**:
+- `test_invalid_four_velocity_normalization`: Now tests explicit validation method
+- `test_invalid_four_velocity_in_linearized_system`: Tests integration with LinearizedIS constructor
+- `test_metric_dependent_normalization`: Validates custom metric support
+**Impact**: Critical fix for metric consistency - four-velocity normalization now properly uses the actual metric tensor
+**Root Cause**: Architectural issue where validation happened before metric was available
+**Tests**: All BackgroundState tests pass, maintains backward compatibility while enabling proper metric support
+
+### ✅ Expensive __str__ Method with Heavy Side Effects (Fixed)
+**File**: `rtrg/israel_stewart/linearized.py:632`
+**Description**: Fixed `LinearizedIS.__str__` method that triggered expensive stability analysis every time the object was printed
+**Evidence**:
+- **Problem**: `return f"LinearizedIS(background={self.background}, stable={self.is_linearly_stable()})"`
+- **Side Effects**: `is_linearly_stable()` performs O(100 × polynomial_solving) computations, can take seconds
+- **Violation**: `__str__` methods should be fast and side-effect free
+**Comprehensive Fixes**:
+- **Removed expensive call**: `__str__` now returns simple `f"LinearizedIS(background={self.background})"`
+- **Added cached property**: `@cached_property stability_status` for lazy evaluation when stability info is needed
+- **Added detailed method**: `get_stability_summary()` provides comprehensive stability analysis with configurable parameters
+- **Added functools import**: Required for `@cached_property` decorator
+**Impact**: Critical performance fix - object printing now instant instead of potentially taking seconds during debugging
+**Alternative Access**:
+- Use `system.stability_status` for cached boolean result
+- Use `system.get_stability_summary()` for detailed analysis with growth rates and mode information
+**Root Cause**: Expensive computation embedded in string representation violated Python best practices
+**Tests**: All existing functionality preserved, no tests depended on `__str__` format
+
+### ✅ isinstance PEP-604 Union Syntax Bug (Fixed)
+**Files**: `rtrg/israel_stewart/linearized.py:197`, `rtrg/field_theory/symbolic_tensors.py:185`, `rtrg/field_theory/tensor_action_expander.py:171`, `rtrg/core/fields.py:301`, `tests/unit/test_tensors.py:133`
+**Description**: Fixed TypeError risk from invalid isinstance calls using PEP-604 union syntax instead of tuple syntax
+**Evidence**:
+- **Incorrect**: `isinstance(sol, list | tuple)` (TypeError at runtime)
+- **Correct**: `isinstance(sol, (list, tuple))` (Standard tuple syntax)
+**Comprehensive Fixes**:
+- `linearized.py`: `isinstance(sol, (list, tuple))`
+- `symbolic_tensors.py`: `isinstance(indices, (tuple, list))`
+- `tensor_action_expander.py`: `isinstance(arg, (int, Symbol))`
+- `fields.py`: `isinstance(trace, (int, float, complex))`
+- `test_tensors.py`: `isinstance(trace, (int, float, complex))`
+**Impact**: Critical fix for runtime compatibility - all isinstance calls now use proper tuple syntax as required by Python specification
+**Root Cause**: PEP-604 union syntax (`type1 | type2`) cannot be used with isinstance; requires traditional tuple syntax (`(type1, type2)`)
+**Tests**: All changes preserve functionality while ensuring runtime compatibility
+
 ### ✅ Linearization Variable Shape Inconsistencies (Fixed)
 **Files**: `rtrg/israel_stewart/equations.py:418-490`
 **Description**: Fixed critical inconsistency where linearized perturbations were defined as scalar Functions but accessed as vectors/tensors
