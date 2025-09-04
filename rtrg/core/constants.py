@@ -91,8 +91,8 @@ class PhysicalConstants:
     def to_cgs(cls, quantity: float, dimension: str) -> float:
         """Convert from natural units to CGS"""
         conversions = {
-            "length": 1.973e-11,  # cm (ℏc/GeV)
-            "time": 6.582e-22,  # s (ℏ/GeV)
+            "length": 1.97327e-14,  # cm (ℏc/GeV)
+            "time": 6.58212e-25,  # s (ℏ/GeV)
             "mass": 1.783e-24,  # g (GeV/c²)
             "energy": 1.602e-3,  # erg (GeV)
             "temperature": 1.160e13,  # K (GeV/k_B)
@@ -136,8 +136,8 @@ class UnitSystem:
         return {
             "natural": {"length": 1.0, "time": 1.0, "mass": 1.0, "energy": 1.0},
             "cgs": {
-                "length": 1.973e-11,  # cm
-                "time": 6.582e-22,  # s
+                "length": 1.97327e-14,  # cm
+                "time": 6.58212e-25,  # s
                 "mass": 1.783e-24,  # g
                 "energy": 1.602e-3,  # erg
             },

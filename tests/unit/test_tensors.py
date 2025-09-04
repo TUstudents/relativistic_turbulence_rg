@@ -296,3 +296,84 @@ class TestPhysicalTensors:
         # Check trace is zero (antisymmetric tensors are traceless)
         trace = F_tensor.trace()
         assert abs(trace) < 1e-12
+
+
+@pytest.mark.unit
+class TestPhysicalConstants:
+    """Test physical constants and unit conversions"""
+
+    def test_corrected_gev_to_cgs_conversions(self):
+        """Test that GeV→CGS conversion factors are correct"""
+        from rtrg.core.constants import PhysicalConstants
+
+        # Test length conversion (ℏc/GeV)
+        length_cm = PhysicalConstants.to_cgs(1.0, "length")
+        expected_length = 1.97327e-14  # cm, from ℏc ≈ 197.327 MeV·fm
+        assert abs(length_cm - expected_length) / expected_length < 1e-4
+
+        # Test time conversion (ℏ/GeV)
+        time_s = PhysicalConstants.to_cgs(1.0, "time")
+        expected_time = 6.58212e-25  # s, from ℏ ≈ 6.58212×10^-22 MeV·s
+        assert abs(time_s - expected_time) / expected_time < 1e-4
+
+    def test_unit_system_conversions_consistency(self):
+        """Test UnitSystem conversions match PhysicalConstants"""
+        from rtrg.core.constants import PhysicalConstants, UnitSystem
+
+        unit_system = UnitSystem("cgs")
+
+        # Length conversion should match
+        length_pc = PhysicalConstants.to_cgs(1.0, "length")
+        length_us = unit_system.convert(1.0, "length", "natural")
+        assert abs(length_pc - length_us) < 1e-20
+
+        # Time conversion should match
+        time_pc = PhysicalConstants.to_cgs(1.0, "time")
+        time_us = unit_system.convert(1.0, "time", "natural")
+        assert abs(time_pc - time_us) < 1e-30
+
+
+@pytest.mark.unit
+class TestMetricValidation:
+    """Test Metric constructor validation"""
+
+    def test_metric_dimension_validation(self):
+        """Test dimension validation in Metric constructor"""
+        # Valid dimensions should work
+        metric = Metric(dimension=4)
+        assert metric.dim == 4
+
+        metric_3d = Metric(dimension=3, signature=(-1, 1, 1))
+        assert metric_3d.dim == 3
+
+        # Invalid dimensions should fail
+        with pytest.raises(ValueError, match="Dimension must be positive"):
+            Metric(dimension=0)
+
+        with pytest.raises(ValueError, match="Dimension must be positive"):
+            Metric(dimension=-1)
+
+    def test_metric_signature_validation(self):
+        """Test signature length validation in Metric constructor"""
+        # Matching signature length should work
+        metric = Metric(dimension=2, signature=(-1, 1))
+        assert metric.signature == (-1, 1)
+
+        # Mismatched signature length should fail
+        with pytest.raises(ValueError, match="Signature length.*doesn't match dimension"):
+            Metric(dimension=4, signature=(-1, 1))  # Too short
+
+        with pytest.raises(ValueError, match="Signature length.*doesn't match dimension"):
+            Metric(dimension=2, signature=(-1, 1, 1, 1))  # Too long
+
+    def test_metric_construction_with_validation(self):
+        """Test that metric tensor is constructed correctly after validation"""
+        # Test default case
+        metric = Metric()
+        expected_diag = [-1, 1, 1, 1]
+        np.testing.assert_array_equal(np.diag(metric.g), expected_diag)
+
+        # Test custom case
+        metric_custom = Metric(dimension=3, signature=(1, -1, -1))
+        expected_custom = [1, -1, -1]
+        np.testing.assert_array_equal(np.diag(metric_custom.g), expected_custom)

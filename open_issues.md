@@ -114,6 +114,40 @@ Only fills diagonal up to length of default signature `(-1, 1, 1, 1)`.
 
 ## Recent Fixes (Completed)
 
+### ✅ Wrong GeV→CGS Conversion Factors and Metric Validation (Fixed)
+**Files**: `rtrg/core/constants.py:94-95,139-140`, `rtrg/core/tensors.py:86-100`, `tests/unit/test_tensors.py:301-379`
+**Description**: Fixed critical unit conversion errors and missing validation in Metric constructor
+**Issues Fixed**:
+1. **GeV→CGS conversion factors wrong by factor of 1000**
+   - **Length**: Changed `1.973e-11 cm` → `1.97327e-14 cm` (ℏc/GeV)
+   - **Time**: Changed `6.582e-22 s` → `6.58212e-25 s` (ℏ/GeV)
+   - **Root cause**: Incorrect understanding of ℏc ≈ 197.327 MeV·fm conversion
+2. **Metric constructor docstring/code inconsistency**
+   - **Docstring promised**: ValueError when signature length ≠ dimension
+   - **Code actually did**: Silent truncation with `min(len(signature), dimension)`
+   - **Fix**: Added proper validation to match docstring promise
+**Comprehensive Fixes**:
+- **Updated PhysicalConstants.to_cgs()**: Corrected both length and time conversion factors
+- **Updated UnitSystem._setup_conversions()**: Fixed CGS conversion factors for consistency
+- **Enhanced Metric constructor**: Added dimension > 0 check and signature length validation
+- **Comprehensive tests**: Added TestPhysicalConstants and TestMetricValidation classes
+**Mathematical Corrections**:
+- Length: Uses correct ℏc = 197.327 MeV·fm → 1.97327×10⁻¹⁴ cm per GeV⁻¹
+- Time: Uses correct ℏ = 658.212 MeV·fs → 6.58212×10⁻²⁵ s per GeV⁻¹
+- Validation: Proper error handling for invalid metric dimensions/signatures
+**Impact**: Critical fix for all unit conversions and metric construction - eliminates 1000× errors in physical calculations
+**Tests**: 5 new tests added, all existing tests still pass
+**Before/After**:
+```python
+# Before (WRONG - 1000× off):
+"length": 1.973e-11,  # cm
+"time": 6.582e-22,    # s
+
+# After (CORRECT):
+"length": 1.97327e-14,  # cm (ℏc/GeV)
+"time": 6.58212e-25,    # s (ℏ/GeV)
+```
+
 ### ✅ Background Normalization Hard-codes Minkowski Metric (Fixed)
 **File**: `rtrg/israel_stewart/linearized.py:94-99`, `tests/unit/test_linearized_is.py:65-100`
 **Description**: Fixed BackgroundState four-velocity normalization that hard-coded Minkowski metric assumption instead of using proper metric tensor

@@ -83,12 +83,20 @@ class Metric:
             ValueError: If dimension is not positive or signature length
                 doesn't match dimension.
         """
+        if dimension <= 0:
+            raise ValueError("Dimension must be positive")
+
         self.dim = dimension
         self.signature = signature or PhysicalConstants.METRIC_SIGNATURE
 
+        if len(self.signature) != dimension:
+            raise ValueError(
+                f"Signature length ({len(self.signature)}) doesn't match dimension ({dimension})"
+            )
+
         # Construct metric tensor
         self.g = np.zeros((dimension, dimension))
-        for i in range(min(len(self.signature), dimension)):
+        for i in range(dimension):
             self.g[i, i] = self.signature[i]
 
     def contract(self, tensor: np.ndarray, indices: list[int]) -> np.ndarray:
