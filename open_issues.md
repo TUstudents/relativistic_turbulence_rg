@@ -114,6 +114,19 @@ Only fills diagonal up to length of default signature `(-1, 1, 1, 1)`.
 
 ## Recent Fixes (Completed)
 
+### ✅ Heat Flux Orthogonality Metric Bug (Fixed)
+**Files**: `rtrg/israel_stewart/equations.py:250`, `rtrg/field_theory/msrjd_action.py:558`, `tests/integration/test_basic_phase2_validation.py:135`
+**Description**: Fixed incorrect heat flux orthogonality constraint that computed `u^μ q^μ` instead of proper `u_μ q^μ = g_{μν} u^μ q^ν`
+**Evidence**:
+- **Incorrect**: `heat_orthogonality = sp.Sum(u_mu[mu] * q_mu[mu], (mu, 0, 3))`
+- **Correct**: `heat_orthogonality = sp.Sum(g_munu[mu, nu] * u_mu[mu] * q_mu[nu], (mu, 0, 3), (nu, 0, 3))`
+**Additional Fixes**:
+- Fixed four-velocity normalization constraint in msrjd_action.py to use proper `g_{μν} u^μ u^ν`
+- Corrected test contraction in test_basic_phase2_validation.py for proper tensor index summation
+**Impact**: Critical fix for Lorentz covariance - all orthogonality and normalization constraints now mathematically correct
+**Root Cause**: Missing metric tensor for proper index lowering in constraint calculations
+**Tests**: All tests pass, including specific constraint validation tests
+
 ### ✅ Tracelessness Implementation Bug (Fixed)
 **Files**: `rtrg/israel_stewart/equations.py:239`, `rtrg/field_theory/msrjd_action.py:549`  
 **Description**: Fixed incorrect tracelessness constraint implementation that used non-Lorentz-invariant `∑_μ π_{μμ}` instead of proper `g^{μν} π_{μν}`

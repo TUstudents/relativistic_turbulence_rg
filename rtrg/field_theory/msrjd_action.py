@@ -537,14 +537,18 @@ class MSRJDAction:
         lambda_pi = Function("lambda_pi")(self.t, self.x, self.y, self.z)  # Shear tracelessness
         lambda_q = Function("lambda_q")(self.t, self.x, self.y, self.z)  # Heat flux orthogonality
 
-        # Four-velocity normalization: λ_u(u^μ u_μ + c²)
+        # Four-velocity normalization: λ_u(u^μ u_μ + c²) = λ_u(g_{μν} u^μ u^ν + c²)
         mu_idx = symbols("mu", integer=True)
+        nu_idx = symbols("nu", integer=True)
         u_mu = self.fields["u"][mu_idx]
-        u_norm_constraint = lambda_u * (u_mu * u_mu + PhysicalConstants.c**2)
+        u_nu = self.fields["u"][nu_idx]
+        g_munu = IndexedBase("g")  # Metric tensor g_{μν}
+        u_norm_constraint = lambda_u * (
+            g_munu[mu_idx, nu_idx] * u_mu * u_nu + PhysicalConstants.c**2
+        )
         constraint_action += u_norm_constraint
 
         # Shear stress tracelessness: λ_π(g^{μν} π_{μν})
-        nu_idx = symbols("nu", integer=True)
         g_inv = IndexedBase("g_inv")  # Inverse metric g^{μν}
         pi_trace = (
             g_inv[mu_idx, nu_idx] * self.fields["pi"][mu_idx, nu_idx]
@@ -552,9 +556,10 @@ class MSRJDAction:
         trace_constraint = lambda_pi * pi_trace
         constraint_action += trace_constraint
 
-        # Heat flux orthogonality: λ_q(u_μ q^μ)
-        q_mu = self.fields["q"][mu_idx]
-        orthogonality_constraint = lambda_q * (u_mu * q_mu)
+        # Heat flux orthogonality: λ_q(u_μ q^μ) = λ_q(g_{μν} u^μ q^ν)
+        q_nu = self.fields["q"][nu_idx]
+        g_munu = IndexedBase("g")  # Metric tensor g_{μν}
+        orthogonality_constraint = lambda_q * (g_munu[mu_idx, nu_idx] * u_mu * q_nu)
         constraint_action += orthogonality_constraint
 
         return constraint_action

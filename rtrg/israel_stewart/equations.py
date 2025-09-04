@@ -245,9 +245,9 @@ class IsraelStewartSystem:
             orthogonality_constraint = sp.Sum(u_mu[mu] * pi_munu[mu, nu_val], (mu, 0, 3))
             constraints.append(orthogonality_constraint)
 
-        # Heat flux orthogonality: u_μ q^μ = 0
+        # Heat flux orthogonality: u_μ q^μ = g_{μν} u^μ q^ν = 0
         q_mu = sp.IndexedBase("q")
-        heat_orthogonality = sp.Sum(u_mu[mu] * q_mu[mu], (mu, 0, 3))
+        heat_orthogonality = sp.Sum(g_munu[mu, nu] * u_mu[mu] * q_mu[nu], (mu, 0, 3), (nu, 0, 3))
         constraints.append(heat_orthogonality)
 
         return constraints

@@ -130,8 +130,9 @@ class TestBasicTensorStructures:
         mu = symbols("mu", integer=True)
 
         # Create contraction g_μν u^μ u^ν (conceptually)
-        # In practice, would need to sum over μ
-        contraction = sum(g[mu, mu] * u[mu] * u[mu] for mu in range(4))
+        # In practice, would need to sum over μ and ν
+        nu = symbols("nu", integer=True)
+        contraction = sum(g[mu, nu] * u[mu] * u[nu] for mu in range(4) for nu in range(4))
 
         assert contraction is not None
 
