@@ -250,6 +250,7 @@ class TestLinearizedIS:
         assert continuity.is_Add  # Sum of terms
 
 
+@pytest.mark.numerical
 class TestDispersionRelations:
     """Test dispersion relation calculations and mode analysis."""
 
@@ -323,6 +324,7 @@ class TestDispersionRelations:
         assert omega_diff.imag <= 0.1  # Allow small positive growth for simplified system
 
 
+@pytest.mark.numerical
 class TestStabilityAnalysis:
     """Test linear stability analysis and growth rate calculations."""
 

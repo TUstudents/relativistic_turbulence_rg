@@ -55,7 +55,9 @@ def spatial_projector(u: np.ndarray, metric: Metric | None = None) -> np.ndarray
 def tt_projector(u: np.ndarray, metric: Metric | None = None) -> np.ndarray:
     """Return transverse–traceless projector P_{μναβ} for rank-2 shear tensors.
 
-    P_{μναβ} = 1/2 (Δ_{μα} Δ_{νβ} + Δ_{μβ} Δ_{να}) - 1/3 Δ_{μν} Δ_{αβ}
+    P_{μναβ} = 1/2 (Δ_{μα} Δ_{νβ} + Δ_{μβ} Δ_{να}) - 1/(d-1) Δ_{μν} Δ_{αβ}
+
+    where d is the spacetime dimension and d-1 is the number of spatial dimensions.
 
     Args:
         u: Four-velocity (contravariant)
@@ -70,9 +72,11 @@ def tt_projector(u: np.ndarray, metric: Metric | None = None) -> np.ndarray:
     P = np.zeros((dim, dim, dim, dim), dtype=float)
 
     # Build P via explicit index operations
-    # P_{μναβ} = 1/2 (Δ_{μα} Δ_{νβ} + Δ_{μβ} Δ_{να}) - 1/3 Δ_{μν} Δ_{αβ}
+    # P_{μναβ} = 1/2 (Δ_{μα} Δ_{νβ} + Δ_{μβ} Δ_{να}) - 1/(d-1) Δ_{μν} Δ_{αβ}
+    # where d-1 is the number of spatial dimensions
+    spatial_dims = dim - 1  # Exclude time dimension
     term1 = 0.5 * (np.einsum("ma,nb->mnab", Delta, Delta) + np.einsum("mb,na->mnab", Delta, Delta))
-    term2 = (1.0 / 3.0) * np.einsum("mn,ab->mnab", Delta, Delta)
+    term2 = (1.0 / spatial_dims) * np.einsum("mn,ab->mnab", Delta, Delta)
     P = term1 - term2
     return np.asarray(P, dtype=float)
 
