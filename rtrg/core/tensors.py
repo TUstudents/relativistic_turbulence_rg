@@ -322,7 +322,7 @@ class LorentzTensor:
 
     def contract(
         self, other: "LorentzTensor", index_pairs: list[tuple[int, int]]
-    ) -> "LorentzTensor":
+    ) -> Union["LorentzTensor", float, complex]:
         """
         Contract tensor indices using Einstein summation convention.
 
@@ -346,8 +346,8 @@ class LorentzTensor:
                 the i-th index of self with j-th index of other.
 
         Returns:
-            New LorentzTensor containing the result of contraction. The rank
-            equals (self.rank + other.rank - 2*len(index_pairs)).
+            For rank > 0 results: New LorentzTensor with rank = (self.rank + other.rank - 2*len(index_pairs))
+            For rank = 0 results: Python scalar (float or complex) for easier numeric operations
 
         Raises:
             ValueError: If index pairs are invalid or incompatible for contraction.
@@ -361,13 +361,38 @@ class LorentzTensor:
             >>> # Contract tensors: T^{μν} S_{μ}^{ρ} (gives T'^{νρ})
             >>> result = T.contract(S, [(0, 0)])  # Contract first indices
         """
-        # Build einsum string for contraction
-        einsum_str = self._build_contraction_einsum(other, index_pairs)
+        # Handle metric tensor for same-variance index pairs
+        tensor_self = self
+        tensor_other = other
+        
+        for self_idx, other_idx in index_pairs:
+            self_type = self.indices.types[self_idx] if self_idx < len(self.indices.types) else "contravariant"
+            other_type = other.indices.types[other_idx] if other_idx < len(other.indices.types) else "contravariant"
+            
+            # If both indices have same variance, need to use metric to make one opposite
+            if self_type == other_type:
+                if self_type == "contravariant":
+                    # Both contravariant: lower the other tensor's index
+                    # u^μ v^ν → u^μ v_ν (with g_μν)
+                    tensor_other = tensor_other.lower_index(other_idx)
+                elif self_type == "covariant":
+                    # Both covariant: raise the other tensor's index  
+                    # u_μ v_ν → u_μ v^ν (with g^μν)
+                    tensor_other = tensor_other.raise_index(other_idx)
+
+        # Build einsum string for contraction (now with proper mixed indices)
+        einsum_str = tensor_self._build_contraction_einsum(tensor_other, index_pairs)
 
         # Perform contraction
-        result_components = np.einsum(einsum_str, self.components, other.components)
+        result_components = np.einsum(einsum_str, tensor_self.components, tensor_other.components)
 
-        # Build result index structure
+        # If result is rank-0 (scalar), return Python scalar instead of LorentzTensor
+        if result_components.ndim == 0:
+            # Extract scalar value (handles both real and complex cases)
+            scalar_value = result_components.item()
+            return scalar_value
+
+        # Build result index structure for non-scalar results
         result_indices = self._build_result_indices_contraction(other, index_pairs)
 
         return LorentzTensor(result_components, result_indices, self.metric)
@@ -593,7 +618,7 @@ class LorentzTensor:
         v_dot_u = self.contract(reference, [(0, 0)])
         u_dot_u = reference.contract(reference, [(0, 0)])
 
-        if abs(u_dot_u) < 1e-14:  # type: ignore[arg-type]
+        if abs(u_dot_u) < 1e-14:
             raise ValueError("Cannot orthogonalize against zero vector")
 
         # v' = v - (v·u/u·u) u
@@ -612,7 +637,7 @@ class LorentzTensor:
         #         + (T^ρσ u_ρ u_σ / (u·u)²) u^μ u^ν
 
         u_dot_u = reference.contract(reference, [(0, 0)])
-        if abs(u_dot_u) < 1e-14:  # type: ignore[arg-type]
+        if abs(u_dot_u) < 1e-14:
             raise ValueError("Cannot orthogonalize against zero vector")
 
         orthogonal_components = self.components.copy()
@@ -684,7 +709,7 @@ class LorentzTensor:
 
             if self.rank == 1:
                 dot_product = self.contract(reference, [(0, 0)])
-                violation = abs(dot_product)  # type: ignore[arg-type]
+                violation = abs(dot_product)
                 return violation < tolerance, float(violation)
             elif self.rank == 2:
                 # Check T^μν u_ν = 0 for all μ
@@ -792,7 +817,7 @@ class LorentzTensor:
         k_lower = momentum.lower_index(0)
         k_squared = momentum.contract(k_lower, [(0, 0)])
 
-        if abs(k_squared) < 1e-14:  # type: ignore[arg-type]
+        if abs(k_squared) < 1e-14:
             raise ValueError("Cannot create longitudinal projector for zero momentum")
 
         # Create k^μk^ν/k² projector

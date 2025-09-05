@@ -505,5 +505,143 @@ class TestTensorPerformance:
         assert result.rank == 3
 
 
+class TestTensorContractionBugFixes:
+    """Test fixes for tensor contraction bugs identified in chatgpt_buglist.md"""
+
+    def setup_method(self):
+        """Set up test tensors and metric"""
+        self.metric = Metric()
+
+    def test_scalar_return_for_rank_zero_contractions(self):
+        """Test that rank-0 contractions return Python scalars, not LorentzTensor objects"""
+        # Create vector tensors
+        indices_up = IndexStructure(["mu"], ["contravariant"], ["none"])
+        indices_down = IndexStructure(["nu"], ["covariant"], ["none"])
+
+        u_up = LorentzTensor(np.array([1.0, 0.5, 0.0, 0.0]), indices_up, self.metric)
+        u_down = u_up.lower_index(0)
+
+        # Contract to get scalar: u^μ u_μ
+        result = u_up.contract(u_down, [(0, 0)])
+
+        # Should be Python scalar, not LorentzTensor
+        assert isinstance(result, (float, complex)), f"Expected scalar, got {type(result)}"
+        assert not hasattr(result, "rank"), "Scalar result should not have tensor properties"
+
+        # Should work with abs() function (this was the original bug)
+        abs_result = abs(result)
+        assert isinstance(abs_result, float), f"abs() should return float, got {type(abs_result)}"
+
+    def test_non_scalar_contractions_still_return_tensors(self):
+        """Test that non-scalar contractions still return LorentzTensor objects"""
+        # Create rank-2 and rank-1 tensors
+        indices_2 = IndexStructure(["mu", "nu"], ["contravariant", "covariant"], ["none", "none"])
+        indices_1 = IndexStructure(["rho"], ["contravariant"], ["none"])
+
+        tensor_2 = LorentzTensor(np.random.rand(4, 4), indices_2, self.metric)
+        vector = LorentzTensor(np.array([1.0, 0.5, 0.0, 0.0]), indices_1, self.metric)
+
+        # Contract one index: T^μ_ν u^ρ → T^μ_ρ (rank-1 result)
+        result = tensor_2.contract(vector, [(1, 0)])
+
+        # Should still be LorentzTensor
+        assert isinstance(result, LorentzTensor), f"Expected LorentzTensor, got {type(result)}"
+        assert result.rank == 1, f"Expected rank-1, got rank-{result.rank}"
+
+    def test_same_variance_contraction_uses_metric(self):
+        """Test that same-variance contractions properly use the metric tensor"""
+        indices_up = IndexStructure(["mu"], ["contravariant"], ["none"])
+
+        # Two contravariant vectors
+        u1 = LorentzTensor(np.array([1.0, 0.5, 0.0, 0.0]), indices_up, self.metric)
+        u2 = LorentzTensor(np.array([2.0, 0.3, 0.1, 0.0]), indices_up, self.metric)
+
+        # Contract u^μ v^ν (both up indices - should use metric)
+        result = u1.contract(u2, [(0, 0)])
+
+        # Manual calculation with metric: g_μν u^μ v^ν
+        expected = np.einsum("ab,a,b->", self.metric.g, u1.components, u2.components)
+        expected_real = expected.real if isinstance(expected, complex) else expected
+
+        assert_allclose(result.real, expected_real, rtol=1e-12)
+
+        # Verify it's different from wrong einsum (without metric)
+        wrong_result = np.einsum("a,a->", u1.components, u2.components)
+        assert abs(result.real - wrong_result.real) > 1e-6, "Result should differ from wrong einsum"
+
+    def test_mixed_variance_contraction_direct_sum(self):
+        """Test that mixed-variance contractions use direct summation (no metric needed)"""
+        indices_up = IndexStructure(["mu"], ["contravariant"], ["none"])
+        indices_down = IndexStructure(["nu"], ["covariant"], ["none"])
+
+        u_up = LorentzTensor(np.array([1.0, 0.5, 0.0, 0.0]), indices_up, self.metric)
+        v_down = LorentzTensor(np.array([2.0, 0.3, 0.1, 0.0]), indices_down, self.metric)
+
+        # Contract u^μ v_ν (mixed indices - direct sum appropriate)
+        result = u_up.contract(v_down, [(0, 0)])
+
+        # Should equal direct sum
+        expected = np.sum(u_up.components * v_down.components).real
+        assert_allclose(result.real, expected, rtol=1e-12)
+
+    def test_covariant_covariant_contraction_uses_inverse_metric(self):
+        """Test that covariant-covariant contractions use inverse metric"""
+        indices_down = IndexStructure(["mu"], ["covariant"], ["none"])
+
+        # Two covariant vectors
+        u_down = LorentzTensor(np.array([1.0, 0.5, 0.0, 0.0]), indices_down, self.metric)
+        v_down = LorentzTensor(np.array([2.0, 0.3, 0.1, 0.0]), indices_down, self.metric)
+
+        # Contract u_μ v_ν (both down indices - should use g^μν)
+        result = u_down.contract(v_down, [(0, 0)])
+
+        # Manual calculation with inverse metric: g^μν u_μ v_ν
+        g_inv = np.linalg.inv(self.metric.g)
+        expected = np.einsum("ab,a,b->", g_inv, u_down.components, v_down.components)
+        expected_real = expected.real if isinstance(expected, complex) else expected
+
+        assert_allclose(result.real, expected_real, rtol=1e-12)
+
+    def test_four_velocity_normalization_with_fixes(self):
+        """Test that four-velocity normalization works correctly with fixed contractions"""
+        # Create normalized four-velocity in rest frame
+        indices_up = IndexStructure(["mu"], ["contravariant"], ["none"])
+        u_up = LorentzTensor(np.array([PhysicalConstants.c, 0.0, 0.0, 0.0]), indices_up, self.metric)
+        u_down = u_up.lower_index(0)
+
+        # Contract to get u^μ u_μ (should be -c²)
+        norm_squared = u_up.contract(u_down, [(0, 0)])
+
+        # Should be scalar and equal to -c²
+        assert isinstance(norm_squared, (float, complex))
+        expected = -(PhysicalConstants.c**2)
+        assert_allclose(norm_squared.real, expected, rtol=1e-12)
+
+        # abs() should work without type errors
+        magnitude = abs(norm_squared)
+        assert_allclose(magnitude, abs(expected), rtol=1e-12)
+
+    def test_orthogonality_calculations_work(self):
+        """Test that orthogonality calculations work with fixed contractions"""
+        # Create test vectors
+        indices_up = IndexStructure(["mu"], ["contravariant"], ["none"])
+
+        # Four-velocity (timelike)
+        u = LorentzTensor(np.array([PhysicalConstants.c, 0.0, 0.0, 0.0]), indices_up, self.metric)
+
+        # Spatial vector (should be orthogonal)
+        v = LorentzTensor(np.array([0.0, 1.0, 0.0, 0.0]), indices_up, self.metric)
+
+        # Lower index for proper contraction
+        v_down = v.lower_index(0)
+        
+        # Check orthogonality: u^μ v_μ should be 0
+        orthogonality = u.contract(v_down, [(0, 0)])
+
+        # Should be scalar and close to zero
+        assert isinstance(orthogonality, (float, complex))
+        assert abs(orthogonality) < 1e-12, f"Expected orthogonality, got {orthogonality}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
