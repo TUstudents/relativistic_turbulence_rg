@@ -45,16 +45,25 @@ class TestTensorIndex:
         mu_upper = TensorIndex("mu", IndexType.SPACETIME, "upper")
         mu_lower = TensorIndex("mu", IndexType.SPACETIME, "lower")
         nu_upper = TensorIndex("nu", IndexType.SPACETIME, "upper")
+        nu_lower = TensorIndex("nu", IndexType.SPACETIME, "lower")
+        i_upper = TensorIndex("i", IndexType.SPATIAL, "upper")
 
         # Same name, opposite positions can contract
         assert mu_upper.is_contractible_with(mu_lower)
         assert mu_lower.is_contractible_with(mu_upper)
 
-        # Different names cannot contract
+        # Different names with opposite positions CAN contract (fixed physics bug)
+        assert mu_upper.is_contractible_with(nu_lower)
+        assert nu_lower.is_contractible_with(mu_upper)
+
+        # Same position cannot contract (both upper)
         assert not mu_upper.is_contractible_with(nu_upper)
 
-        # Same position cannot contract
-        assert not mu_upper.is_contractible_with(nu_upper)
+        # Same position cannot contract (both lower)
+        assert not mu_lower.is_contractible_with(nu_lower)
+
+        # Different index types cannot contract (spacetime vs spatial)
+        assert not mu_upper.is_contractible_with(i_upper)
 
     def test_raise_lower_index(self):
         """Test index position changing."""
@@ -64,6 +73,90 @@ class TestTensorIndex:
         assert mu_lower.position == "lower"
         assert mu_lower.name == "mu"
         assert mu_lower.index_type == IndexType.SPACETIME
+
+
+class TestIndexContractibilityBugFix:
+    """Test Bug #5 fix: Index compatibility should allow different names."""
+
+    def test_different_names_opposite_positions_contract(self):
+        """Test that indices with different names and opposite positions can contract."""
+        # Physics: T^μν h_ρσ should allow μ↔ρ and ν↔σ contractions
+        mu_upper = TensorIndex("mu", IndexType.SPACETIME, "upper")
+        rho_lower = TensorIndex("rho", IndexType.SPACETIME, "lower")
+        nu_upper = TensorIndex("nu", IndexType.SPACETIME, "upper")
+        sigma_lower = TensorIndex("sigma", IndexType.SPACETIME, "lower")
+
+        # All these should be contractible
+        assert mu_upper.is_contractible_with(rho_lower)
+        assert rho_lower.is_contractible_with(mu_upper)
+        assert nu_upper.is_contractible_with(sigma_lower)
+        assert sigma_lower.is_contractible_with(nu_upper)
+
+    def test_different_names_same_positions_dont_contract(self):
+        """Test that indices with same positions cannot contract regardless of names."""
+        mu_upper = TensorIndex("mu", IndexType.SPACETIME, "upper")
+        nu_upper = TensorIndex("nu", IndexType.SPACETIME, "upper")
+        rho_lower = TensorIndex("rho", IndexType.SPACETIME, "lower")
+        sigma_lower = TensorIndex("sigma", IndexType.SPACETIME, "lower")
+
+        # Upper with upper cannot contract
+        assert not mu_upper.is_contractible_with(nu_upper)
+        assert not nu_upper.is_contractible_with(mu_upper)
+
+        # Lower with lower cannot contract
+        assert not rho_lower.is_contractible_with(sigma_lower)
+        assert not sigma_lower.is_contractible_with(rho_lower)
+
+    def test_different_index_types_dont_contract(self):
+        """Test that different index types cannot contract."""
+        mu_upper = TensorIndex("mu", IndexType.SPACETIME, "upper")
+        i_lower = TensorIndex("i", IndexType.SPATIAL, "lower")
+        j_upper = TensorIndex("j", IndexType.SPATIAL, "upper")
+        t_lower = TensorIndex("t", IndexType.TEMPORAL, "lower")
+
+        # Spacetime vs spatial
+        assert not mu_upper.is_contractible_with(i_lower)
+        assert not i_lower.is_contractible_with(mu_upper)
+
+        # Spacetime vs temporal
+        assert not mu_upper.is_contractible_with(t_lower)
+        assert not t_lower.is_contractible_with(mu_upper)
+
+        # Spatial vs temporal
+        assert not j_upper.is_contractible_with(t_lower)
+        assert not t_lower.is_contractible_with(j_upper)
+
+    def test_same_name_contractions_still_work(self):
+        """Test that same name contractions still work as before."""
+        mu_upper = TensorIndex("mu", IndexType.SPACETIME, "upper")
+        mu_lower = TensorIndex("mu", IndexType.SPACETIME, "lower")
+
+        # This should still work
+        assert mu_upper.is_contractible_with(mu_lower)
+        assert mu_lower.is_contractible_with(mu_upper)
+
+    def test_physics_example_tensor_contractions(self):
+        """Test realistic physics examples that were previously blocked."""
+        # Example: T^μν g_ρσ contraction should work for μ↔ρ or ν↔σ
+        T_mu = TensorIndex("mu", IndexType.SPACETIME, "upper")
+        T_nu = TensorIndex("nu", IndexType.SPACETIME, "upper")
+        g_rho = TensorIndex("rho", IndexType.SPACETIME, "lower")
+        g_sigma = TensorIndex("sigma", IndexType.SPACETIME, "lower")
+
+        # These contractions should be possible
+        assert T_mu.is_contractible_with(g_rho)  # T^μν g_μσ
+        assert T_mu.is_contractible_with(g_sigma)  # T^μν g_ρμ
+        assert T_nu.is_contractible_with(g_rho)  # T^μν g_νσ
+        assert T_nu.is_contractible_with(g_sigma)  # T^μν g_ρν
+
+        # Example: π^μν u_α (shear stress with four-velocity)
+        pi_mu = TensorIndex("mu", IndexType.SPACETIME, "upper")
+        pi_nu = TensorIndex("nu", IndexType.SPACETIME, "upper")
+        u_alpha = TensorIndex("alpha", IndexType.SPACETIME, "lower")
+
+        # These should contract for orthogonality constraint: π^μν u_ν = 0
+        assert pi_nu.is_contractible_with(u_alpha)  # Can contract ν↔α
+        assert pi_mu.is_contractible_with(u_alpha)  # Can contract μ↔α
 
 
 class TestTensorIndexStructure:

@@ -1647,7 +1647,7 @@ class TensorIndex:
             self.index_type == other.index_type
             and self.dimension == other.dimension
             and self.position != other.position  # Must have opposite positions
-            and self.name == other.name  # Must be the same index symbol
+            # Removed name equality requirement - different names can contract (e.g., μ with ρ)
         )
 
     def raise_lower_index(self) -> "TensorIndex":
