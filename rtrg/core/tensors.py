@@ -928,22 +928,36 @@ class LorentzTensor:
         if len(velocity) != self.metric.dim:
             raise ValueError(f"Velocity must have dimension {self.metric.dim}")
 
-        # Construct spatial projector with correct index positions:
-        # Δ_{μν} = g_{μν} + u_μ u_ν / c², with u_μ = g_{μσ} u^σ
+        # Construct mixed spatial projector: h^μ_ν = δ^μ_ν + u^μ u_ν / c²
+        # This is the correct form for projection based on index variance
         g = self.metric.g
         c_sq = PhysicalConstants.c**2
         u_lower = g @ velocity
-        Delta = g + np.outer(u_lower, u_lower) / c_sq
+        h_mixed = np.eye(self.metric.dim) + np.outer(velocity, u_lower) / c_sq
 
-        # Apply projector to each index
+        # Apply projector to each index based on its variance type
         result = self.components.copy()
         for i in range(self.rank):
-            # Contract covariant projector on the i-th index of the tensor
-            result = np.tensordot(Delta, result, axes=([1], [i]))
-            # Move contracted axis back to position i
-            axes = list(range(result.ndim))
-            axes = axes[1 : i + 1] + [0] + axes[i + 1 :]
-            result = result.transpose(axes)
+            index_type = self.indices.types[i]
+            
+            if index_type == "contravariant":
+                # For contravariant index T^μ: apply h^μ_ν to get h^μ_ν T^ν
+                result = np.tensordot(h_mixed, result, axes=([1], [i]))
+                # Move contracted axis back to position i
+                axes = list(range(result.ndim))
+                axes = axes[1 : i + 1] + [0] + axes[i + 1 :]
+                result = result.transpose(axes)
+            elif index_type == "covariant":
+                # For covariant index T_μ: apply h_μ^ν to get h_μ^ν T_ν 
+                # This requires using the transpose of h_mixed
+                h_inv_mixed = h_mixed.T  # h_μ^ν = (h^ν_μ)^T
+                result = np.tensordot(h_inv_mixed, result, axes=([1], [i]))
+                # Move contracted axis back to position i
+                axes = list(range(result.ndim))
+                axes = axes[1 : i + 1] + [0] + axes[i + 1 :]
+                result = result.transpose(axes)
+            else:
+                raise ValueError(f"Unknown index type: {index_type}")
 
         return LorentzTensor(result, self.indices, self.metric)
 

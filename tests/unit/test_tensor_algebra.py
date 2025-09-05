@@ -982,5 +982,183 @@ class TestNormalizationPhysicsBugFixes:
         assert abs(mass_shell - 1.0) < 1e-12
 
 
+class TestSpatialProjectionBugFix:
+    """Test Bug Fix: Velocity-orthogonal projectors should respect index variance."""
+
+    @pytest.fixture
+    def metric(self):
+        """Standard Minkowski metric"""
+        return Metric()
+    
+    @pytest.fixture 
+    def rest_velocity(self):
+        """Four-velocity in rest frame u^μ = (c, 0, 0, 0)"""
+        return np.array([1.0, 0.0, 0.0, 0.0])  # c = 1 in natural units
+    
+    @pytest.fixture
+    def test_velocity(self):
+        """Four-velocity with spatial component u^μ = γ(c, v, 0, 0)"""
+        v = 0.6  # β = v/c = 0.6
+        gamma = 1.0 / np.sqrt(1 - v**2)  # γ = 1/√(1-β²)
+        return np.array([gamma, gamma * v, 0.0, 0.0])
+
+    def test_contravariant_vector_projection(self, metric, rest_velocity):
+        """Test projection of contravariant vector v^μ."""
+        # Create contravariant vector with temporal component
+        v_components = np.array([1.0, 2.0, 3.0, 4.0])
+        v_indices = IndexStructure(["mu"], ["contravariant"], ["none"])
+        v_tensor = LorentzTensor(v_components, v_indices, metric)
+        
+        # Project with four-velocity  
+        projected = v_tensor.project_spatial(rest_velocity)
+        
+        # In rest frame, projection should kill temporal component
+        # Expected: (0, 2, 3, 4) since h^μ_ν u^ν = 0 for μ=0
+        expected_components = np.array([0.0, 2.0, 3.0, 4.0])
+        assert_allclose(projected.components, expected_components, rtol=1e-12)
+        
+        # Verify orthogonality: u_μ v^μ_projected = 0
+        u_lower = metric.g @ rest_velocity
+        orthogonality = np.dot(u_lower, projected.components)
+        assert abs(orthogonality) < 1e-12
+
+    def test_covariant_vector_projection(self, metric, rest_velocity):
+        """Test projection of covariant vector v_μ."""
+        # Create covariant vector with temporal component  
+        v_components = np.array([1.0, 2.0, 3.0, 4.0])
+        v_indices = IndexStructure(["mu"], ["covariant"], ["none"])
+        v_tensor = LorentzTensor(v_components, v_indices, metric)
+        
+        # Project with four-velocity
+        projected = v_tensor.project_spatial(rest_velocity)
+        
+        # In rest frame: h_μ^ν should kill temporal component differently
+        # For covariant index: result should be orthogonal to u^μ
+        # Expected behavior: temporal component gets modified
+        
+        # Most important: verify orthogonality u^μ v_μ_projected = 0
+        orthogonality = np.dot(rest_velocity, projected.components)
+        assert abs(orthogonality) < 1e-12
+        
+        # Spatial components should be preserved for rest frame
+        assert_allclose(projected.components[1:], v_components[1:], rtol=1e-12)
+
+    def test_mixed_tensor_projection(self, metric, rest_velocity):
+        """Test projection of mixed tensor T^μ_ν."""
+        # Create mixed tensor (contravariant first, covariant second)
+        T_components = np.array([[1.0, 0.1, 0.2, 0.3],
+                                [0.1, 2.0, 0.4, 0.5], 
+                                [0.2, 0.4, 3.0, 0.6],
+                                [0.3, 0.5, 0.6, 4.0]])
+        T_indices = IndexStructure(["mu", "nu"], ["contravariant", "covariant"], ["none", "none"])
+        T_tensor = LorentzTensor(T_components, T_indices, metric)
+        
+        # Project spatially
+        projected = T_tensor.project_spatial(rest_velocity)
+        
+        # Verify orthogonality in both indices:
+        # u_μ (projected)^μ_ν = 0 (first index)
+        u_lower = metric.g @ rest_velocity
+        first_index_ortho = u_lower @ projected.components
+        assert_allclose(first_index_ortho, 0, atol=1e-12)
+        
+        # u^ν (projected)^μ_ν = 0 (second index)  
+        second_index_ortho = projected.components @ rest_velocity
+        assert_allclose(second_index_ortho, 0, atol=1e-12)
+
+    def test_contravariant_tensor_projection(self, metric, rest_velocity):
+        """Test projection of contravariant tensor T^μν."""
+        # Create symmetric contravariant tensor
+        T_components = np.array([[1.0, 0.1, 0.2, 0.3],
+                                [0.1, 2.0, 0.4, 0.5],
+                                [0.2, 0.4, 3.0, 0.6], 
+                                [0.3, 0.5, 0.6, 4.0]])
+        T_indices = IndexStructure(["mu", "nu"], ["contravariant", "contravariant"], ["symmetric", "symmetric"])
+        T_tensor = LorentzTensor(T_components, T_indices, metric)
+        
+        # Project spatially  
+        projected = T_tensor.project_spatial(rest_velocity)
+        
+        # Both indices are contravariant, so orthogonality conditions:
+        # u_μ (projected)^μν = 0 and u_ν (projected)^μν = 0
+        u_lower = metric.g @ rest_velocity
+        
+        # Contract first index
+        first_ortho = np.dot(u_lower, projected.components)
+        assert_allclose(first_ortho, 0, atol=1e-12)
+        
+        # Contract second index  
+        second_ortho = np.dot(projected.components, u_lower)
+        assert_allclose(second_ortho, 0, atol=1e-12)
+
+    def test_covariant_tensor_projection(self, metric, rest_velocity):
+        """Test projection of covariant tensor T_μν."""
+        # Create symmetric covariant tensor
+        T_components = np.array([[1.0, 0.1, 0.2, 0.3],
+                                [0.1, 2.0, 0.4, 0.5],
+                                [0.2, 0.4, 3.0, 0.6],
+                                [0.3, 0.5, 0.6, 4.0]])
+        T_indices = IndexStructure(["mu", "nu"], ["covariant", "covariant"], ["symmetric", "symmetric"])
+        T_tensor = LorentzTensor(T_components, T_indices, metric)
+        
+        # Project spatially
+        projected = T_tensor.project_spatial(rest_velocity)
+        
+        # Both indices are covariant, so orthogonality conditions:
+        # u^μ (projected)_μν = 0 and u^ν (projected)_μν = 0
+        
+        # Contract first index
+        first_ortho = np.dot(rest_velocity, projected.components)
+        assert_allclose(first_ortho, 0, atol=1e-12)
+        
+        # Contract second index
+        second_ortho = np.dot(projected.components.T, rest_velocity)  
+        assert_allclose(second_ortho, 0, atol=1e-12)
+
+    def test_projection_idempotency(self, metric, rest_velocity):
+        """Test that spatial projection is idempotent: h(h(T)) = h(T)."""
+        # Create test vector
+        v_components = np.array([1.0, 2.0, 3.0, 4.0])
+        v_indices = IndexStructure(["mu"], ["contravariant"], ["none"]) 
+        v_tensor = LorentzTensor(v_components, v_indices, metric)
+        
+        # Apply projection twice
+        projected_once = v_tensor.project_spatial(rest_velocity)
+        projected_twice = projected_once.project_spatial(rest_velocity)
+        
+        # Should be identical
+        assert_allclose(projected_once.components, projected_twice.components, rtol=1e-12)
+
+    def test_moving_frame_projection(self, metric, test_velocity):
+        """Test spatial projection in a moving frame."""
+        # Create contravariant vector
+        v_components = np.array([1.0, 2.0, 3.0, 4.0])
+        v_indices = IndexStructure(["mu"], ["contravariant"], ["none"])
+        v_tensor = LorentzTensor(v_components, v_indices, metric)
+        
+        # Project with moving four-velocity
+        projected = v_tensor.project_spatial(test_velocity)
+        
+        # Verify orthogonality: u_μ v^μ_projected = 0
+        u_lower = metric.g @ test_velocity
+        orthogonality = np.dot(u_lower, projected.components)
+        assert abs(orthogonality) < 1e-12
+
+    def test_regression_previous_behavior(self, metric, rest_velocity):
+        """Test that existing contravariant-contravariant behavior still works."""
+        # This tests backward compatibility with the old implementation
+        # Create the same stress tensor as in the original test
+        stress_components = np.diag([1.0, 0.3, 0.3, 0.3])  # Perfect fluid
+        stress_indices = IndexStructure(["mu", "nu"], ["contravariant", "contravariant"], ["symmetric", "symmetric"])
+        stress_tensor = LorentzTensor(stress_components, stress_indices, metric)
+        
+        # Project (should match original expectation)
+        projected = stress_tensor.project_spatial(rest_velocity)
+        
+        # In rest frame, should kill temporal components
+        expected = np.array([[0, 0, 0, 0], [0, 0.3, 0, 0], [0, 0, 0.3, 0], [0, 0, 0, 0.3]])
+        assert_allclose(projected.components, expected, rtol=1e-10)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
