@@ -57,7 +57,7 @@ except ImportError:
     SymPyTensorIndex = None
 
 from ..core.tensors import IndexType as RTRGIndexType
-from ..core.tensors import TensorIndex, TensorIndexStructure
+from ..core.tensors import Metric, TensorIndex, TensorIndexStructure
 
 
 @dataclass
@@ -248,7 +248,7 @@ class SymbolicTensorField(Function):
             Function evaluation at the given coordinates
         """
         # For scalar fields, just call with coordinates
-        if not hasattr(self, "_rank") or getattr(self, "_rank", 0) == 0:
+        if self.index_count == 0:
             component_func = Function(self.field_name)
             return component_func(*coordinates)
         else:
@@ -282,35 +282,70 @@ class SymbolicTensorField(Function):
                 f"Expected {self.coordinate_count} coordinates, got {len(coordinate_values)}"
             )
 
-        all_args = list(tensor_indices) + list(coordinate_values)
-        return self(*all_args)
+        # Use __getitem__ logic: encode indices in component name, pass only coordinates
+        if tensor_indices:
+            index_str = "_".join(str(idx) for idx in tensor_indices)
+            component_name = f"{self.field_name}_{index_str}"
+        else:
+            component_name = self.field_name
 
-    def apply_constraint(self, constraint_type: str) -> sp.Expr:
+        # Create component function with indices encoded in name
+        component_func = Function(component_name)
+        return component_func(*coordinate_values)
+
+    def apply_constraint(self, constraint_type: str, metric: Metric | None = None) -> sp.Expr:
         """
         Apply physical constraint to the tensor field.
 
         Args:
             constraint_type: Type of constraint ("normalization", "traceless", "orthogonal")
+            metric: Metric tensor for proper contractions. If None, uses default Minkowski metric.
 
         Returns:
-            Symbolic constraint expression
+            Symbolic constraint expression using proper metric contractions
         """
         if constraint_type == "normalization" and self.field_name == "u":
-            # Four-velocity normalization: u^μ u_μ = -c²
-            mu = symbols("mu", integer=True)
+            # Four-velocity normalization: g_{μν} u^μ u^ν = -c²
+            # Use default Minkowski metric if not provided
+            if metric is None:
+                metric = Metric()
+
+            mu, nu = symbols("mu nu", integer=True)
             c = sp.Symbol("c", positive=True)
 
-            # Create metric contraction (simplified to Minkowski)
-            constraint = (
-                sum(self[mu, *self._coordinates] * self[mu, *self._coordinates] for mu in range(4))
-                + c**2
-            )
+            # Create proper metric contraction: g_{μν} u^μ u^ν + c² = 0
+            constraint = c**2  # Start with +c²
+
+            for mu_idx in range(metric.dim):
+                for nu_idx in range(metric.dim):
+                    # Create field components u^μ and u^ν
+                    u_mu_component = self.create_component([mu_idx], self._coordinates)
+                    u_nu_component = self.create_component([nu_idx], self._coordinates)
+
+                    # Add metric tensor component g_{μν} u^μ u^ν
+                    constraint += metric.g[mu_idx, nu_idx] * u_mu_component * u_nu_component
+
             return constraint
 
         elif constraint_type == "traceless" and self.field_name == "pi":
-            # Shear stress tracelessness: π^μ_μ = 0
-            mu = symbols("mu", integer=True)
-            constraint = sum(self[mu, mu, *self._coordinates] for mu in range(4))
+            # Shear stress tracelessness: g_{μν} π^{μν} = 0
+            # Use default Minkowski metric if not provided
+            if metric is None:
+                metric = Metric()
+
+            mu, nu = symbols("mu nu", integer=True)
+
+            # Create proper metric contraction: g_{μν} π^{μν} = 0
+            constraint = sp.sympify(0)  # Start with 0
+
+            for mu_idx in range(metric.dim):
+                for nu_idx in range(metric.dim):
+                    # Create tensor component π^{μν}
+                    pi_component = self.create_component([mu_idx, nu_idx], self._coordinates)
+
+                    # Add metric tensor component g_{μν} π^{μν}
+                    constraint += metric.g[mu_idx, nu_idx] * pi_component
+
             return constraint
 
         elif constraint_type == "orthogonal":
@@ -719,12 +754,15 @@ class IndexedFieldRegistry:
 
         return validation_results
 
-    def create_israel_stewart_fields(self, coordinates: list[Symbol]) -> None:
+    def create_israel_stewart_fields(
+        self, coordinates: list[Symbol], metric: Metric | None = None
+    ) -> None:
         """
         Create all Israel-Stewart fields with proper tensor structure.
 
         Args:
             coordinates: Spacetime coordinates [t, x, y, z]
+            metric: Metric tensor for constraint contractions. If None, uses default Minkowski metric.
         """
         # Energy density (scalar)
         rho_field = SymbolicTensorField("rho", [], coordinates, field_type="scalar")
@@ -771,11 +809,11 @@ class IndexedFieldRegistry:
 
         # Add specific constraints
         if "u" in self._fields:
-            u_constraint = self._fields["u"].apply_constraint("normalization")
+            u_constraint = self._fields["u"].apply_constraint("normalization", metric)
             self.add_constraint("u", u_constraint)
 
         if "pi" in self._fields:
-            pi_constraint = self._fields["pi"].apply_constraint("traceless")
+            pi_constraint = self._fields["pi"].apply_constraint("traceless", metric)
             self.add_constraint("pi", pi_constraint)
 
     def field_count(self) -> int:
