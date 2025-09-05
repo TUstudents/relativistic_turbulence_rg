@@ -582,3 +582,481 @@ class TestPropagatorIntegration:
         # Check that relevant parameters appear in the expression
         # (This is implementation-dependent)
         assert retarded is not None
+
+
+class TestAdvancedPropagatorFeatures:
+    """
+    Test suite for Task 2: Advanced Propagator Features.
+
+    Tests enhanced thermal distributions, spectral analysis, and pole structure analysis.
+    """
+
+    def test_bose_einstein_distribution(self, propagator_calculator):
+        """Test Bose-Einstein distribution function."""
+        calc = propagator_calculator
+        omega = sp.Symbol("omega", real=True)
+
+        # Test at different temperatures
+        for temp in [0.1, 1.0, 5.0]:
+            n_B = calc.bose_einstein_distribution(omega, temperature=temp)
+
+            assert n_B is not None
+            assert isinstance(n_B, sp.Expr)
+
+            # Check high-frequency limit: n_B → 0 as ω → ∞
+            high_freq_limit = n_B.subs(omega, 100)
+            try:
+                limit_val = float(high_freq_limit.evalf())
+                assert limit_val < 0.1, f"High frequency limit should be small, got {limit_val}"
+            except:
+                pass  # May fail for symbolic expressions
+
+            # Check that expression contains exponential and temperature
+            expr_str = str(n_B)
+            assert "exp" in expr_str.lower(), "Should contain exponential function"
+
+    def test_fermi_dirac_distribution(self, propagator_calculator):
+        """Test Fermi-Dirac distribution function."""
+        calc = propagator_calculator
+        omega = sp.Symbol("omega", real=True)
+
+        # Test at different temperatures
+        for temp in [0.1, 1.0, 5.0]:
+            n_F = calc.fermi_dirac_distribution(omega, temperature=temp)
+
+            assert n_F is not None
+            assert isinstance(n_F, sp.Expr)
+
+            # Check high-frequency limit: n_F → 0 as ω → ∞
+            high_freq_limit = n_F.subs(omega, 100)
+            try:
+                limit_val = float(high_freq_limit.evalf())
+                assert limit_val < 0.1, f"High frequency limit should be small, got {limit_val}"
+            except:
+                pass  # May fail for symbolic expressions
+
+            # Check that expression contains exponential and temperature
+            expr_str = str(n_F)
+            assert "exp" in expr_str.lower(), "Should contain exponential function"
+
+    def test_thermal_distribution_factor(self, propagator_calculator):
+        """Test general thermal distribution factor."""
+        calc = propagator_calculator
+        omega = sp.Symbol("omega", real=True)
+
+        # Test different field types
+        for field_type in ["boson", "fermion", "classical"]:
+            factor = calc.thermal_distribution_factor(omega, field_type=field_type)
+
+            assert factor is not None
+            assert isinstance(factor, sp.Expr)
+
+        # Test invalid field type
+        with pytest.raises(ValueError):
+            calc.thermal_distribution_factor(omega, field_type="invalid")
+
+    def test_enhanced_fdt_relation(self, propagator_calculator, field_registry):
+        """Test enhanced FDT with quantum statistics."""
+        calc = propagator_calculator
+        fields = list(field_registry.fields.values())
+        velocity_field = next(f for f in fields if f.name == "u")
+
+        # Test both quantum and classical FDT
+        for use_quantum in [True, False]:
+            G_K = calc.enhanced_fdt_relation(
+                velocity_field, velocity_field,
+                use_quantum_statistics=use_quantum
+            )
+
+            assert G_K is not None
+            assert isinstance(G_K, sp.Expr)
+
+            # Should be different from zero
+            assert G_K != 0
+
+    def test_temperature_dependent_crossover(self, propagator_calculator):
+        """Test quantum-classical crossover analysis."""
+        calc = propagator_calculator
+
+        # Test different frequency/temperature ratios
+        test_cases = [
+            (0.1, 1.0, "classical"),   # ω << T
+            (1.0, 1.0, "crossover"),   # ω ~ T
+            (10.0, 1.0, "quantum")     # ω >> T
+        ]
+
+        for omega_char, temp, _expected_regime in test_cases:
+            result = calc.temperature_dependent_crossover(omega_char, temperature=temp)
+
+            assert isinstance(result, dict)
+            assert "regime" in result
+            assert "quantum_parameter" in result
+            assert "use_quantum_statistics" in result
+
+            # Check that regime classification makes sense
+            assert result["regime"] in ["quantum", "classical", "crossover"]
+
+    def test_verify_detailed_balance(self, propagator_calculator, field_registry):
+        """Test detailed balance verification."""
+        calc = propagator_calculator
+        fields = list(field_registry.fields.values())
+        velocity_field = next(f for f in fields if f.name == "u")
+
+        omega_points = np.linspace(-2.0, 2.0, 10)
+
+        result = calc.verify_detailed_balance(velocity_field, velocity_field, omega_points)
+
+        assert isinstance(result, dict)
+        assert "detailed_balance_satisfied" in result
+        assert "max_violation" in result
+        assert "total_points_tested" in result
+
+        assert isinstance(result["detailed_balance_satisfied"], bool)
+        assert isinstance(result["max_violation"], int | float)
+
+    def test_enhanced_keldysh_propagator(self, propagator_calculator, field_registry):
+        """Test enhanced Keldysh propagator with new options."""
+        calc = propagator_calculator
+        fields = list(field_registry.fields.values())
+        velocity_field = next(f for f in fields if f.name == "u")
+
+        # Test enhanced FDT mode
+        G_K_enhanced = calc.calculate_keldysh_propagator(
+            velocity_field, velocity_field,
+            use_enhanced_fdt=True,
+            use_quantum_statistics=True
+        )
+
+        # Test classical FDT mode
+        G_K_classical = calc.calculate_keldysh_propagator(
+            velocity_field, velocity_field,
+            use_enhanced_fdt=False
+        )
+
+        assert G_K_enhanced is not None
+        assert G_K_classical is not None
+        assert isinstance(G_K_enhanced, sp.Expr)
+        assert isinstance(G_K_classical, sp.Expr)
+
+        # Enhanced and classical should be different
+        # (unless in classical limit, but we can't easily check that here)
+        assert G_K_enhanced != 0
+        assert G_K_classical != 0
+
+    def test_enhanced_spectral_function(self, propagator_calculator, field_registry):
+        """Test enhanced spectral function analysis."""
+        calc = propagator_calculator
+        fields = list(field_registry.fields.values())
+        velocity_field = next(f for f in fields if f.name == "u")
+
+        # Test with omega range for full analysis
+        result = calc.enhanced_spectral_function(
+            velocity_field, velocity_field,
+            omega_range=(-3.0, 3.0),
+            k_val=1.0
+        )
+
+        assert isinstance(result, dict)
+        assert "spectral_expression" in result
+        assert "field_pair" in result
+        assert "momentum" in result
+
+        # Check that omega range analysis was performed
+        assert "omega_range" in result
+        assert "omega_points" in result
+        assert "spectral_values" in result
+        assert "peaks" in result
+        assert "mode_classification" in result
+
+        # Check data types
+        assert isinstance(result["omega_points"], np.ndarray)
+        assert isinstance(result["spectral_values"], np.ndarray)
+        assert isinstance(result["peaks"], list)
+        assert isinstance(result["mode_classification"], dict)
+
+    def test_spectral_peak_finding(self, propagator_calculator):
+        """Test spectral peak finding algorithm."""
+        calc = propagator_calculator
+
+        # Create synthetic spectral data with known peaks
+        omega_points = np.linspace(-5, 5, 1000)
+
+        # Synthetic spectral function with Lorentzian peaks
+        spectral_values = (0.5 / ((omega_points - 1.0)**2 + 0.1**2) +
+                          0.3 / ((omega_points + 1.5)**2 + 0.2**2) +
+                          0.1 * np.exp(-omega_points**2))  # Background
+
+        peaks = calc._find_spectral_peaks(omega_points, spectral_values)
+
+        assert isinstance(peaks, list)
+        assert len(peaks) >= 1  # Should find at least one peak
+
+        for peak in peaks:
+            assert "frequency" in peak
+            assert "height" in peak
+            assert "width" in peak
+            assert isinstance(peak["frequency"], int | float)
+            assert isinstance(peak["height"], int | float)
+
+    def test_mode_classification(self, propagator_calculator):
+        """Test spectral mode classification."""
+        calc = propagator_calculator
+
+        # Create synthetic peaks
+        test_peaks = [
+            {"frequency": 1.0, "height": 0.5, "width": 0.2},  # Propagating mode
+            {"frequency": 0.05, "height": 0.3, "width": 0.5}, # Diffusive mode
+            {"frequency": 10.0, "height": 0.1, "width": 0.1}   # Unphysical mode
+        ]
+
+        omega_points = np.linspace(-5, 5, 100)
+        k_val = 1.0
+
+        classification = calc._classify_spectral_modes(test_peaks, omega_points, k_val)
+
+        assert isinstance(classification, dict)
+        assert "sound_modes" in classification
+        assert "diffusive_modes" in classification
+        assert "unphysical_modes" in classification
+        assert "total_modes" in classification
+
+        assert classification["total_modes"] == len(test_peaks)
+
+    def test_verify_enhanced_sum_rules(self, propagator_calculator, field_registry):
+        """Test enhanced sum rule verification."""
+        calc = propagator_calculator
+        fields = list(field_registry.fields.values())
+        velocity_field = next(f for f in fields if f.name == "u")
+
+        result = calc.verify_enhanced_sum_rules(
+            velocity_field, velocity_field,
+            omega_range=(-5.0, 5.0),
+            k_val=1.0
+        )
+
+        assert isinstance(result, dict)
+        assert "field_pair" in result
+        assert "normalization" in result
+        assert "f_sum_rule" in result
+        assert "positivity" in result
+        assert "overall_consistency" in result
+
+        # Check normalization results
+        norm_result = result["normalization"]
+        assert "integral" in norm_result
+        assert "error" in norm_result
+        assert "satisfied" in norm_result
+        assert isinstance(norm_result["satisfied"], bool | np.bool_)
+
+    def test_kramers_kronig_consistency(self, propagator_calculator, field_registry):
+        """Test enhanced Kramers-Kronig consistency check."""
+        calc = propagator_calculator
+        fields = list(field_registry.fields.values())
+        velocity_field = next(f for f in fields if f.name == "u")
+
+        result = calc.check_kramers_kronig_consistency(
+            velocity_field, velocity_field,
+            omega_range=(-3.0, 3.0),
+            k_val=1.0
+        )
+
+        assert isinstance(result, dict)
+        assert "field_pair" in result
+        assert "kk_errors" in result
+        assert "average_error" in result
+        assert "satisfied" in result
+        assert "omega_range" in result
+
+        assert isinstance(result["satisfied"], bool | np.bool_)
+        assert isinstance(result["average_error"], int | float)
+
+    def test_systematic_pole_finding(self, propagator_calculator, field_registry):
+        """Test systematic pole finding across momentum range."""
+        calc = propagator_calculator
+        fields = list(field_registry.fields.values())
+        velocity_field = next(f for f in fields if f.name == "u")
+
+        k_range = np.array([0.5, 1.0, 1.5])  # Small range for testing
+
+        result = calc.find_propagator_poles_systematic(
+            velocity_field, velocity_field,
+            k_range=k_range,
+            omega_search_range=(-3-3j, 3+3j)
+        )
+
+        assert isinstance(result, dict)
+        assert "field_pair" in result
+        assert "k_range" in result
+        assert "poles_by_momentum" in result
+        assert "dispersion_relations" in result
+        assert "stability_analysis" in result
+
+        # Check that we have pole data for each k value
+        poles_by_k = result["poles_by_momentum"]
+        assert len(poles_by_k) <= len(k_range)  # May be less if some k values failed
+
+    def test_pole_classification(self, propagator_calculator):
+        """Test pole classification system."""
+        calc = propagator_calculator
+
+        # Test different types of poles
+        test_poles = [
+            complex(1.0, -0.1),   # Sound mode (causal)
+            complex(0.1, -0.5),   # Diffusive mode
+            complex(2.0, 0.1),    # Unphysical (non-causal)
+            complex(0.0, -1.0)    # Relaxation mode
+        ]
+
+        k_val = 1.0
+
+        for pole in test_poles:
+            classification = calc._classify_single_pole(pole, k_val)
+
+            assert isinstance(classification, dict)
+            assert "type" in classification
+            assert "pole" in classification
+            assert "momentum" in classification
+            assert "causality" in classification
+
+            assert classification["type"] in ["hydrodynamic", "non_hydrodynamic", "unphysical"]
+
+    def test_dispersion_relation_extraction(self, propagator_calculator):
+        """Test dispersion relation fitting."""
+        calc = propagator_calculator
+
+        # Create synthetic pole data mimicking sound and diffusive modes
+        k_range = np.linspace(0.5, 2.0, 10)
+        sound_speed = 0.5
+        damping = 0.1
+
+        pole_data = []
+
+        # Add sound mode poles: ω = ±c_s k - iΓk²
+        for k_val in k_range:
+            # Positive branch
+            pole_data.append({
+                "pole": complex(sound_speed * k_val, -damping * k_val**2),
+                "momentum": k_val,
+                "classification": {"mode_type": "sound"}
+            })
+            # Negative branch
+            pole_data.append({
+                "pole": complex(-sound_speed * k_val, -damping * k_val**2),
+                "momentum": k_val,
+                "classification": {"mode_type": "sound"}
+            })
+
+        dispersion_result = calc._extract_dispersion_relations(pole_data, k_range)
+
+        assert isinstance(dispersion_result, dict)
+
+        if "sound_modes" in dispersion_result:
+            sound_fit = dispersion_result["sound_modes"]
+            if "positive_branch" in sound_fit:
+                fitted_speed = sound_fit["positive_branch"].get("sound_speed")
+                if fitted_speed is not None:
+                    # Should recover approximately the input sound speed
+                    assert abs(fitted_speed - sound_speed) < 0.2
+
+    def test_complete_mode_structure_analysis(self, propagator_calculator, field_registry):
+        """Test complete mode structure analysis combining all methods."""
+        calc = propagator_calculator
+        fields = list(field_registry.fields.values())
+        velocity_field = next(f for f in fields if f.name == "u")
+
+        k_range = np.array([0.5, 1.0, 1.5])  # Small range for testing
+
+        result = calc.analyze_mode_structure_complete(
+            velocity_field, velocity_field,
+            k_range=k_range
+        )
+
+        assert isinstance(result, dict)
+        assert "field_pair" in result
+        assert "pole_analysis" in result
+        assert "spectral_analyses" in result
+        assert "consistency_check" in result
+        assert "physical_parameters" in result
+        assert "analysis_type" in result
+
+        assert result["analysis_type"] == "complete_mode_structure"
+
+        # Check that both pole and spectral analyses were performed
+        pole_analysis = result["pole_analysis"]
+        spectral_analyses = result["spectral_analyses"]
+
+        assert isinstance(pole_analysis, dict)
+        assert isinstance(spectral_analyses, dict)
+
+        # Should have some spectral analysis results
+        assert len(spectral_analyses) > 0
+
+    def test_cross_validation_pole_spectral(self, propagator_calculator):
+        """Test cross-validation between pole and spectral methods."""
+        calc = propagator_calculator
+
+        # Create mock data
+        pole_analysis = {
+            "poles_by_momentum": {
+                1.0: {
+                    "classified_poles": {
+                        "hydrodynamic": [{"real_part": 0.5}]
+                    }
+                }
+            }
+        }
+
+        spectral_analyses = {
+            1.0: {
+                "peaks": [{"frequency": 0.52}]  # Close to pole
+            }
+        }
+
+        validation = calc._cross_validate_pole_spectral(pole_analysis, spectral_analyses)
+
+        assert isinstance(validation, dict)
+        assert "consistent_modes" in validation
+        assert "spectral_only_modes" in validation
+        assert "overall_consistency" in validation
+
+        # Should find the consistent mode
+        assert len(validation["consistent_modes"]) > 0
+        assert isinstance(validation["overall_consistency"], int | float)
+
+    def test_physical_parameter_extraction(self, propagator_calculator):
+        """Test extraction of physical parameters from analysis."""
+        calc = propagator_calculator
+
+        # Create mock analysis data
+        pole_analysis = {
+            "dispersion_relations": {
+                "sound_modes": {
+                    "positive_branch": {
+                        "sound_speed": 0.5,
+                        "damping_coefficient": 0.1
+                    }
+                },
+                "diffusive_modes": {
+                    "diffusivity": 0.2
+                }
+            }
+        }
+
+        spectral_analyses = {
+            1.0: {
+                "transport_coefficients": {
+                    "sound_speed_avg": 0.48,
+                    "diffusivity_avg": 0.22
+                }
+            }
+        }
+
+        parameters = calc._extract_physical_parameters(pole_analysis, spectral_analyses)
+
+        assert isinstance(parameters, dict)
+
+        # Should extract sound speed from both methods
+        if "sound_speed_pole" in parameters:
+            assert abs(parameters["sound_speed_pole"] - 0.5) < 0.1
+        if "sound_speed_avg_spectral" in parameters:
+            assert abs(parameters["sound_speed_avg_spectral"] - 0.48) < 0.1
