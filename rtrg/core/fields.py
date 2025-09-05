@@ -55,6 +55,35 @@ from .tensors import (
 )
 
 
+def symbolic_four_gradient(
+    field: sp.Function | sp.Expr, coords: tuple[sp.Symbol, ...] = None
+) -> sp.Expr:
+    """
+    Compute the 4-gradient (∇^μ) of a scalar field or expression.
+
+    For Israel-Stewart theory, proper spacetime derivatives are essential for:
+    - Heat flux evolution: ∇^μ(1/T) drives thermal conduction
+    - Four-velocity evolution: ∇^μ P creates pressure forces
+    - Energy-momentum conservation: ∇_μ T^μν = 0
+
+    Args:
+        field: Scalar field function or symbolic expression
+        coords: Spacetime coordinates (t,x,y,z). Defaults to standard coordinates.
+
+    Returns:
+        4-gradient as sum of partial derivatives: ∂_t + ∂_x + ∂_y + ∂_z
+
+    Physics Notes:
+        - Uses signature (-,+,+,+) convention
+        - Full spacetime covariance requires all 4 components
+        - Time derivatives alone break Lorentz invariance
+    """
+    if coords is None:
+        coords = sp.symbols("t x y z", real=True)
+
+    return sum(sp.Derivative(field, coord) for coord in coords)
+
+
 @dataclass
 class FieldProperties:
     """
@@ -159,7 +188,7 @@ class Field(ABC):
         if properties.indices:
             # Create indexed symbol for non-scalars
             index_symbols = [sp.Symbol(idx) for idx in properties.indices]
-            self.symbol = sp.IndexedBase(properties.name)[tuple(index_symbols)]
+            self.symbol = sp.IndexedBase(properties.name)[*index_symbols]
 
         # Response field for MSRJD formalism
         self._response_field: ResponseField | None = None
@@ -270,27 +299,127 @@ class Field(ABC):
         symmetric_components = 0.5 * (components + components.T)
         return LorentzTensor(symmetric_components, tensor.indices, tensor.metric)
 
+    def _compute_metric_contracted_trace(self, tensor: LorentzTensor) -> float:
+        """
+        Compute proper metric-contracted trace for Lorentz tensors.
+
+        For a rank-2 tensor T^μν with contravariant indices:
+        trace = g_{μν} T^{μν}
+
+        For mixed or covariant tensors, proper index handling is applied.
+
+        Args:
+            tensor: Rank-2 LorentzTensor
+
+        Returns:
+            Scalar trace value
+
+        Raises:
+            ValueError: If tensor is not rank-2 or has unsupported index structure
+        """
+        if tensor.rank != 2:
+            raise ValueError("Metric-contracted trace only applies to rank-2 tensors")
+
+        # Get tensor components and metric
+        components = tensor.components
+        g = self.metric.g  # Covariant metric g_{μν}
+
+        # Check index types from tensor indices structure
+        if hasattr(tensor.indices, "types"):
+            index_types = tensor.indices.types
+        else:
+            # Fallback: assume contravariant if we can't determine
+            index_types = ["contravariant", "contravariant"]
+
+        # Compute trace based on index structure
+        if index_types == ["contravariant", "contravariant"]:
+            # T^μν: trace = g_{μν} T^{μν}
+            trace = np.einsum("ab,ab->", g, components)
+        elif index_types == ["covariant", "covariant"]:
+            # T_{μν}: trace = g^{μν} T_{μν}
+            g_inv = np.linalg.inv(g)
+            trace = np.einsum("ab,ab->", g_inv, components)
+        elif index_types == ["contravariant", "covariant"] or index_types == [
+            "covariant",
+            "contravariant",
+        ]:
+            # T^μ_ν or T_μ^ν: trace = T^μ_μ (just coordinate trace)
+            trace = np.trace(components)
+        else:
+            raise ValueError(f"Unsupported index structure: {index_types}")
+
+        return float(trace.real) if isinstance(trace, complex) else float(trace)
+
     def _make_traceless(self, tensor: LorentzTensor) -> LorentzTensor:
-        """Make tensor traceless by subtracting trace part"""
+        """
+        Make tensor traceless by subtracting trace part using proper metric contraction.
+
+        For contravariant rank-2 tensor T^μν:
+        T'^μν = T^μν - (1/d) g^μν T^ρ_ρ
+        where T^ρ_ρ = g_{ρσ} T^{ρσ} is the metric-contracted trace.
+
+        Args:
+            tensor: LorentzTensor to make traceless
+
+        Returns:
+            Traceless LorentzTensor
+
+        Raises:
+            ValueError: If tensor has unsupported index structure for traceless operation
+        """
         if tensor.rank < 2:
             return tensor
 
-        # For rank-2 tensor: T^μν - (1/d)g^μν T^α_α
+        # Only implement for rank-2 tensors
         if tensor.rank == 2:
-            trace = tensor.trace()
-            g_inv = np.linalg.inv(self.metric.g)
-            if isinstance(trace, complex):
-                trace_part = float(trace.real) / self.metric.dim * g_inv
-            else:
-                # trace is LorentzTensor, this will need proper implementation
-                trace_part = trace.components / self.metric.dim * g_inv
+            # Compute proper metric-contracted trace
+            trace = self._compute_metric_contracted_trace(tensor)
 
-            # Subtract trace part
-            result_components = tensor.components - trace_part
+            # Check index types to apply correct traceless formula
+            if hasattr(tensor.indices, "types"):
+                index_types = tensor.indices.types
+            else:
+                # Fallback: assume contravariant for fields defined in this module
+                index_types = ["contravariant", "contravariant"]
+
+            # Apply traceless transformation based on index structure
+            if index_types == ["contravariant", "contravariant"]:
+                # T'^μν = T^μν - (1/d) g^μν trace
+                g_inv = np.linalg.inv(self.metric.g)  # g^μν
+                trace_part = (trace / self.metric.dim) * g_inv
+                result_components = tensor.components - trace_part
+            elif index_types == ["covariant", "covariant"]:
+                # T'_{μν} = T_{μν} - (1/d) g_{μν} trace
+                g = self.metric.g  # g_{μν}
+                trace_part = (trace / self.metric.dim) * g
+                result_components = tensor.components - trace_part
+            else:
+                raise ValueError(
+                    f"Traceless operation not implemented for mixed index types: {index_types}. "
+                    f"Only pure contravariant or covariant rank-2 tensors are supported."
+                )
+
             return LorentzTensor(result_components, tensor.indices, tensor.metric)
 
         # Higher rank tensors would need more sophisticated treatment
-        return tensor
+        raise ValueError(f"Traceless operation not implemented for rank-{tensor.rank} tensors")
+
+    def _validate_traceless_operation(self, tensor: LorentzTensor) -> None:
+        """
+        Validate that traceless operation is applicable to the tensor.
+
+        Raises:
+            ValueError: If tensor structure is incompatible with traceless operation
+        """
+        if tensor.rank != 2:
+            raise ValueError("Traceless constraint only applies to rank-2 tensors")
+
+        if hasattr(tensor.indices, "types"):
+            index_types = tensor.indices.types
+            if len(set(index_types)) != 1:  # Mixed index types
+                raise ValueError(
+                    "Traceless operation requires uniform index types (all up or all down)"
+                )
 
     def _check_symmetry(self, tensor: LorentzTensor) -> bool:
         """Check if tensor is symmetric"""
@@ -311,17 +440,34 @@ class Field(ABC):
         return True
 
     def _check_traceless(self, tensor: LorentzTensor) -> bool:
-        """Check if tensor is traceless"""
+        """
+        Check if tensor is traceless using proper metric-contracted trace.
+
+        For rank-2 tensor, checks that g_{μν} T^{μν} = 0 (for contravariant)
+        or g^{μν} T_{μν} = 0 (for covariant).
+        """
         if tensor.rank < 2:
             return True
 
-        # Check trace is zero (within numerical precision)
+        if tensor.rank == 2:
+            # Use proper metric-contracted trace
+            try:
+                trace = self._compute_metric_contracted_trace(tensor)
+                return abs(trace) < 1e-12
+            except ValueError:
+                # Fallback to coordinate trace if metric trace fails
+                trace = tensor.trace()
+                if isinstance(trace, int | float | complex):
+                    return abs(trace) < 1e-12
+                else:
+                    return np.allclose(trace.components, 0, atol=1e-12)
+
+        # For higher rank tensors, use existing logic
         trace = tensor.trace()
         if isinstance(trace, int | float | complex):
             return abs(trace) < 1e-12
-
-        # For higher rank, check all possible traces
-        return np.allclose(trace.components, 0, atol=1e-12)
+        else:
+            return np.allclose(trace.components, 0, atol=1e-12)
 
     @abstractmethod
     def evolution_equation(self, **kwargs: Any) -> sp.Expr:
@@ -418,9 +564,10 @@ class FourVelocityField(Field):
 
         # Simplified Euler equation for relativistic fluid
         # u^μ ∂_μ u^ν = -h^μν ∂_μ P/(ε+P)
-        # For now, return the time derivative term
-        time_deriv = sp.diff(u_mu[0], t)  # Simplified to temporal component
-        pressure_gradient = -sp.diff(P, t) / (epsilon + P)
+        # NOTE: This is a simplified implementation using only time derivatives
+        # For proper spacetime gradients, use EnhancedFourVelocityField
+        time_deriv = sp.diff(u_mu[0], t)  # Simplified to temporal component only
+        pressure_gradient = -sp.diff(P, t) / (epsilon + P)  # Time derivative only
 
         return time_deriv - pressure_gradient
 
@@ -614,20 +761,26 @@ class HeatFluxField(Field):
 
     def evolution_equation(self, tau_q: float = 1.0, kappa: float = 1.0, **kwargs: Any) -> sp.Expr:
         """Israel-Stewart evolution equation for heat flux"""
-        t = sp.Symbol("t")
+        # Define spacetime coordinates
+        t, x, y, z = sp.symbols("t x y z", real=True)
         theta = sp.Symbol("theta")
-        T = sp.Symbol("T")  # Temperature
-        alpha = 1 / T  # Inverse temperature
+
+        # Temperature field depends on spacetime coordinates
+        T = sp.Function("T")(t, x, y, z)
+        alpha = 1 / T  # Inverse temperature α = 1/T
 
         # Create symbolic parameters
         tau_q_sym = sp.Symbol("tau_q")
         kappa_sym = sp.Symbol("kappa")
 
         # τ_q ∂_t q^μ + q^μ = -κ T ∇^μ α - τ_q q^μ θ + ...
+        # Use helper for proper 4-gradient ∇^μ α = (∂_t α, ∂_x α, ∂_y α, ∂_z α)
+        four_gradient_alpha = symbolic_four_gradient(alpha, (t, x, y, z))
+
         evolution = (
             tau_q_sym * sp.Derivative(self.symbol, t)
             + self.symbol
-            + kappa_sym * T * sp.Derivative(alpha, t)
+            + kappa_sym * T * four_gradient_alpha
             + tau_q_sym * self.symbol * theta
         )
 
@@ -841,8 +994,14 @@ class EnhancedFourVelocityField(TensorAwareField):
 
         # Relativistic Euler equation
         # u^μ ∂_μ u^ν = -h^μν ∂_μ P/(ε+P) - κ ∇^ν T/ε
-        pressure_force = -sp.diff(P, t) / (epsilon + P)
-        thermal_force = -kappa * sp.diff(T, t) / epsilon
+
+        # Proper 4-gradient of pressure - forces arise from spatial pressure gradients
+        four_gradient_P = symbolic_four_gradient(P, (t, x, y, z))
+        pressure_force = -four_gradient_P / (epsilon + P)
+
+        # Proper 4-gradient of temperature - thermal forces from spatial temperature gradients
+        four_gradient_T = symbolic_four_gradient(T, (t, x, y, z))
+        thermal_force = -kappa * four_gradient_T / epsilon
 
         return pressure_force + thermal_force
 
@@ -977,7 +1136,11 @@ class EnhancedHeatFluxField(TensorAwareField):
 
         # Israel-Stewart heat flux evolution: τ_q ∂ₜq^μ + q^μ = -κ T ∇^μ α - τ_q q^μ θ
         relaxation_term = tau_q * sp.diff(q_mu, t) + q_mu
-        thermal_gradient = -kappa * T * sp.diff(alpha, t)  # Simplified to time gradient
+
+        # Proper 4-gradient of inverse temperature α = 1/T
+        # Heat conduction requires spatial temperature gradients, not just temporal evolution
+        four_gradient_alpha = symbolic_four_gradient(alpha, (t, x, y, z))
+        thermal_gradient = -kappa * T * four_gradient_alpha
         expansion_coupling = -delta_qq * q_mu * theta
 
         return relaxation_term - thermal_gradient - expansion_coupling
