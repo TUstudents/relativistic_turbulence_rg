@@ -76,8 +76,8 @@ class Metric:
                 For standard relativity, use 4 (3+1 dimensions).
                 For theoretical studies, other values are permitted.
             signature: Metric signature as tuple of ±1 values.
-                Default is (-1, 1, 1, 1) for mostly-plus convention.
-                Length must match dimension parameter.
+                If None, auto-generates (-1, 1, 1, ..., 1) for given dimension
+                using the mostly-plus convention.
 
         Raises:
             ValueError: If dimension is not positive or signature length
@@ -87,8 +87,15 @@ class Metric:
             raise ValueError("Dimension must be positive")
 
         self.dim = dimension
-        self.signature = signature or PhysicalConstants.METRIC_SIGNATURE
 
+        # Auto-generate signature for arbitrary dimensions
+        if signature is None:
+            # Default: mostly-plus signature (-1, 1, 1, ..., 1)
+            self.signature = (-1,) + (1,) * (dimension - 1)
+        else:
+            self.signature = signature
+
+        # Validate signature length
         if len(self.signature) != dimension:
             raise ValueError(
                 f"Signature length ({len(self.signature)}) doesn't match dimension ({dimension})"
