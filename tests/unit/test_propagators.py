@@ -17,6 +17,7 @@ from sympy import I, conjugate, expand, pi, simplify, symbols
 
 from rtrg.core.fields import Field, FieldRegistry
 from rtrg.core.parameters import ISParameters
+from rtrg.core.tensors import Metric
 from rtrg.field_theory.msrjd_action import MSRJDAction
 from rtrg.field_theory.propagators import (
     PropagatorCalculator,
@@ -26,6 +27,12 @@ from rtrg.field_theory.propagators import (
 )
 from rtrg.israel_stewart.equations import IsraelStewartParameters, IsraelStewartSystem
 from rtrg.israel_stewart.linearized import LinearizedIS
+
+
+@pytest.fixture
+def metric():
+    """Create standard Minkowski metric for testing."""
+    return Metric()
 
 
 @pytest.fixture
@@ -85,9 +92,9 @@ def msrjd_action(is_system):
 
 
 @pytest.fixture
-def propagator_calculator(msrjd_action):
+def propagator_calculator(msrjd_action, metric):
     """Create propagator calculator for testing."""
-    return PropagatorCalculator(msrjd_action, temperature=1.0)
+    return PropagatorCalculator(msrjd_action, metric, temperature=1.0)
 
 
 class TestPropagatorComponents:

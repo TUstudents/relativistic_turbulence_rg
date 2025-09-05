@@ -886,9 +886,9 @@ class TensorAwareField(Field):
         self.constraints = constraints or []
         self.constrained_tensor = None
 
-        if index_structure is not None:
+        if index_structure is not None and constraints and metric is not None:
             self.constrained_tensor = ConstrainedTensorField(
-                self.name, index_structure, constraints
+                self.name, index_structure, metric, constraints
             )
 
         self.projector = ProjectionOperators(self.metric) if metric else None

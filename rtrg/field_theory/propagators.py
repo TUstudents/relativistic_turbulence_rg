@@ -44,6 +44,7 @@ from ..core.fields import EnhancedFieldRegistry, Field, TensorAwareField
 from ..core.tensors import (
     ConstrainedTensorField,
     IndexType,
+    Metric,
     ProjectionOperators,
     TensorIndex,
     TensorIndexStructure,
@@ -134,15 +135,17 @@ class PropagatorCalculator:
     quadratic MSRJD action with proper tensor decompositions.
     """
 
-    def __init__(self, msrjd_action: MSRJDAction, temperature: float = 1.0):
+    def __init__(self, msrjd_action: MSRJDAction, metric: Metric, temperature: float = 1.0):
         """
         Initialize propagator calculator.
 
         Args:
             msrjd_action: Complete MSRJD action with fields and equations
+            metric: Metric tensor for geometric operations
             temperature: Temperature for FDT relations (in natural units)
         """
         self.action = msrjd_action
+        self.metric = metric
         self.temperature = temperature
         self.is_system = msrjd_action.is_system
         self.field_registry = msrjd_action.is_system.field_registry
@@ -587,12 +590,13 @@ class PropagatorCalculator:
 
     def _build_tensor_quadratic_action(self, field_registry: Any) -> dict[str, Any]:
         """Build quadratic action using proper tensor algebra with numpy.einsum()."""
-        # Minkowski metric for index contractions
-        metric = np.array([[-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float)
-        metric_inv = -metric  # g^μν for raising indices
+        # Use provided metric tensor for index contractions
+        metric = self.metric.g
+        metric_inv = self.metric.g_inv
 
-        # Background four-velocity (rest frame)
-        u_bg = np.array([1.0, 0.0, 0.0, 0.0])
+        # Background four-velocity (rest frame) - dimension-aware
+        u_bg = np.zeros(self.metric.dim)
+        u_bg[0] = 1.0  # Time component
 
         quadratic_components = {}
 
@@ -805,12 +809,15 @@ class PropagatorCalculator:
         u_end = u_start + field_info["u"]["size"]
 
         # Build spatial projector using einsum: h^μν = g^μν + u^μ u^ν
-        metric = np.array([[-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float)
-        u_bg = np.array([1.0, 0.0, 0.0, 0.0])  # Rest frame
+        metric = self.metric.g
+        u_bg = np.zeros(self.metric.dim)
+        u_bg[0] = 1.0  # Rest frame
         spatial_proj = metric + np.einsum("m,n->mn", u_bg, u_bg)
 
         # Velocity propagator with constraint projection
-        velocity_operator = -1j * omega_val * np.eye(4) + params.eta * k_squared * spatial_proj
+        velocity_operator = (
+            -1j * omega_val * np.eye(self.metric.dim) + params.eta * k_squared * spatial_proj
+        )
         G_inv[u_start:u_end, u_start:u_end] = velocity_operator
 
         # 3. Shear stress block with tensor constraints (10x10 for symmetric traceless)
@@ -1023,8 +1030,9 @@ class PropagatorCalculator:
         u_start, u_end = 1, 5  # Four-velocity block indices
 
         # Metric for gauge fixing
-        metric = np.array([[-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float)
-        u_bg = np.array([1.0, 0.0, 0.0, 0.0])  # Background velocity
+        metric = self.metric.g
+        u_bg = np.zeros(self.metric.dim)
+        u_bg[0] = 1.0  # Background velocity
 
         # Constraint term: λ(u^μ u_μ + 1) adds λ g_μν to propagator
         gauge_parameter = 1e-6  # Small gauge parameter for stability
@@ -1364,11 +1372,14 @@ class PropagatorCalculator:
         k_spatial = k_vector  # k = (k_x, k_y, k_z)
         gradient_ops = 1j * k_spatial
 
-        # 3. Four-momentum: k^μ = (ω, k^i) in natural units
-        four_momentum = np.array([omega_val, k_vector[0], k_vector[1], k_vector[2]], dtype=complex)
+        # 3. Four-momentum: k^μ = (ω, k^i) in natural units - dimension-aware
+        four_momentum = np.zeros(self.metric.dim, dtype=complex)
+        four_momentum[0] = omega_val  # Time component
+        for i in range(min(len(k_vector), self.metric.dim - 1)):
+            four_momentum[i + 1] = k_vector[i]  # Spatial components
 
         # 4. Covariant derivative operators with metric
-        metric = np.array([[-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float)
+        metric = self.metric.g
 
         # D_μ → ik_μ where k_μ = g_μν k^ν using einsum
         covariant_momentum = np.einsum("mn,n->m", metric, four_momentum)
@@ -1489,8 +1500,8 @@ class PropagatorCalculator:
 
     def _apply_velocity_constraint_einsum(self, u_components: np.ndarray) -> np.ndarray:
         """Apply four-velocity normalization constraint using einsum."""
-        # Minkowski metric for contraction
-        metric = np.array([[-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float)
+        # Use provided metric for contraction
+        metric = self.metric.g
 
         # Check current normalization: u^μ u_μ using einsum
         norm_squared = np.einsum("m,mn,n", u_components, metric, u_components)
@@ -3223,29 +3234,21 @@ class TensorAwarePropagatorCalculator(PropagatorCalculator):
     needed for physically accurate MSRJD propagator calculations.
     """
 
-    def __init__(self, msrjd_action: MSRJDAction, temperature: float = 1.0):
+    def __init__(self, msrjd_action: MSRJDAction, metric: Metric, temperature: float = 1.0):
         """
         Initialize enhanced propagator calculator.
 
         Args:
             msrjd_action: MSRJD action for Israel-Stewart theory
+            metric: Spacetime metric tensor
             temperature: System temperature (natural units)
         """
-        super().__init__(msrjd_action, temperature)
+        super().__init__(msrjd_action, metric, temperature)
 
         # Enhanced components
-        self.projector = ProjectionOperators(
-            msrjd_action.is_system.field_registry.fields["u"].metric
-        )
-        self.enhanced_registry = None
-
-        # Create enhanced field registry if possible
-        if hasattr(msrjd_action.is_system, "field_registry"):
-            self.enhanced_registry = EnhancedFieldRegistry()
-            metric = msrjd_action.is_system.field_registry.fields.get("u")
-            if metric:
-                metric = metric.metric
-            self.enhanced_registry.create_enhanced_is_fields(metric)  # type: ignore[arg-type]
+        self.projector = ProjectionOperators(metric)
+        self.enhanced_registry = EnhancedFieldRegistry()
+        self.enhanced_registry.create_enhanced_is_fields(metric)
 
         # Default background four-velocity (rest frame)
         self.background_velocity = np.array([1.0, 0.0, 0.0, 0.0])

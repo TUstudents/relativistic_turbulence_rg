@@ -106,6 +106,11 @@ class Metric:
         for i in range(dimension):
             self.g[i, i] = self.signature[i]
 
+    @property
+    def g_inv(self) -> np.ndarray:
+        """Inverse metric tensor g^μν"""
+        return np.linalg.inv(self.g)
+
     def contract(self, tensor: np.ndarray, indices: list[int]) -> np.ndarray:
         """Contract tensor indices with metric"""
         if len(indices) != 2:
@@ -939,7 +944,7 @@ class LorentzTensor:
         result = self.components.copy()
         for i in range(self.rank):
             index_type = self.indices.types[i]
-            
+
             if index_type == "contravariant":
                 # For contravariant index T^μ: apply h^μ_ν to get h^μ_ν T^ν
                 result = np.tensordot(h_mixed, result, axes=([1], [i]))
@@ -948,7 +953,7 @@ class LorentzTensor:
                 axes = axes[1 : i + 1] + [0] + axes[i + 1 :]
                 result = result.transpose(axes)
             elif index_type == "covariant":
-                # For covariant index T_μ: apply h_μ^ν to get h_μ^ν T_ν 
+                # For covariant index T_μ: apply h_μ^ν to get h_μ^ν T_ν
                 # This requires using the transpose of h_mixed
                 h_inv_mixed = h_mixed.T  # h_μ^ν = (h^ν_μ)^T
                 result = np.tensordot(h_inv_mixed, result, axes=([1], [i]))
@@ -1812,10 +1817,15 @@ class ConstrainedTensorField:
 
     This class handles tensor fields that must satisfy physical constraints
     such as normalization, orthogonality, symmetry, and tracelessness.
+    Uses the provided metric tensor for all geometric operations.
     """
 
     def __init__(
-        self, name: str, index_structure: TensorIndexStructure, constraints: list[str] | None = None
+        self,
+        name: str,
+        index_structure: TensorIndexStructure,
+        metric: Metric,
+        constraints: list[str] | None = None,
     ):
         """
         Initialize constrained tensor field.
@@ -1823,25 +1833,36 @@ class ConstrainedTensorField:
         Args:
             name: Field name
             index_structure: Tensor index structure
+            metric: Metric tensor for geometric operations
             constraints: List of constraint names
         """
         self.name = name
         self.index_structure = index_structure
+        self.metric = metric
         self.constraints = constraints or []
         self._constraint_handlers: dict[str, Callable[[np.ndarray], np.ndarray]] = {
-            "normalized": self._apply_normalization,
-            "symmetric": self._apply_symmetry,
-            "antisymmetric": self._apply_antisymmetry,
-            "traceless": self._apply_traceless,
+            "normalized": lambda x, **kwargs: self._apply_normalization(
+                x, kwargs.get("norm_value", -1.0)
+            ),
+            "symmetric": lambda x, **kwargs: self._apply_symmetry(x),
+            "antisymmetric": lambda x, **kwargs: self._apply_antisymmetry(x),
+            "traceless": lambda x, **kwargs: self._apply_traceless(x),
             "orthogonal_to_velocity": lambda x, **kwargs: self._apply_velocity_orthogonality(
-                x, kwargs.get("velocity", np.array([1, 0, 0, 0]))
+                x, kwargs.get("velocity", self._get_default_velocity())
             ),
         }
 
+    def _get_default_velocity(self) -> np.ndarray:
+        """Get default rest frame four-velocity for the metric's dimension."""
+        u = np.zeros(self.metric.dim)
+        u[0] = 1.0  # Time component = c = 1 in natural units
+        return u
+
     def _apply_normalization(self, components: np.ndarray, norm_value: float = -1.0) -> np.ndarray:
-        """Apply normalization constraint."""
+        """Apply normalization constraint using proper metric tensor."""
         # For four-velocity: u^μ u_μ = -c² = -1 (natural units)
-        current_norm = np.sum(components * components * np.array([-1, 1, 1, 1]))
+        # Use proper tensor contraction: u^i g_ij u^j
+        current_norm = np.einsum("i,ij,j->", components, self.metric.g, components)
         if abs(current_norm - norm_value) > 1e-10:
             # Rescale to maintain normalization
             scale_factor = np.sqrt(abs(norm_value / current_norm))
@@ -1873,12 +1894,14 @@ class ConstrainedTensorField:
     def _apply_velocity_orthogonality(
         self, components: np.ndarray, velocity: np.ndarray
     ) -> np.ndarray:
-        """Apply orthogonality to four-velocity."""
+        """Apply orthogonality to four-velocity using proper metric tensor."""
         # Project out components parallel to velocity
-        # For vector: q^μ → q^μ - (q·u)u^μ
+        # For vector: q^μ → q^μ - (q·u)/(u·u) u^μ where q·u = q^i g_ij u^j
         if len(components.shape) == 1:
-            dot_product = np.sum(components * velocity * np.array([-1, 1, 1, 1]))
-            return components - dot_product * velocity  # type: ignore[no-any-return]
+            dot_product = np.einsum("i,ij,j->", components, self.metric.g, velocity)
+            velocity_norm = np.einsum("i,ij,j->", velocity, self.metric.g, velocity)
+            if abs(velocity_norm) > 1e-12:  # Avoid division by zero
+                return components - (dot_product / velocity_norm) * velocity  # type: ignore[no-any-return]
         return components  # type: ignore[no-any-return]
 
     def apply_constraints(self, components: np.ndarray, **kwargs: Any) -> np.ndarray:
@@ -1892,12 +1915,13 @@ class ConstrainedTensorField:
         return result
 
     def validate_constraints(self, components: np.ndarray, **kwargs: Any) -> dict[str, bool]:
-        """Validate that components satisfy all constraints."""
+        """Validate that components satisfy all constraints using proper metric tensor."""
         validation_results = {}
 
         for constraint in self.constraints:
             if constraint == "normalized":
-                norm = np.sum(components * components * np.array([-1, 1, 1, 1]))
+                # Use proper tensor contraction: u^i g_ij u^j
+                norm = np.einsum("i,ij,j->", components, self.metric.g, components)
                 validation_results[constraint] = abs(norm + 1.0) < 1e-10
             elif constraint == "symmetric":
                 if len(components.shape) == 2:

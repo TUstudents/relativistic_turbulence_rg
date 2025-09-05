@@ -208,21 +208,21 @@ class TestConstrainedTensorField:
     """Test constrained tensor field operations."""
 
     @pytest.fixture
-    def four_velocity_field(self):
+    def four_velocity_field(self, metric):
         """Create four-velocity tensor field."""
         mu_idx = TensorIndex("mu", IndexType.SPACETIME, "upper")
         structure = TensorIndexStructure([mu_idx])
-        return ConstrainedTensorField("u", structure, ["normalized"])
+        return ConstrainedTensorField("u", structure, metric, ["normalized"])
 
-    def test_normalization_constraint(self, four_velocity_field):
+    def test_normalization_constraint(self, four_velocity_field, metric):
         """Test four-velocity normalization."""
         # Test vector that's not normalized
         components = np.array([2.0, 0.5, 0.3, 0.1])
 
         normalized = four_velocity_field.apply_constraints(components)
 
-        # Check normalization: u^μ u_μ = -1 (with metric signature (-,+,+,+))
-        norm = np.sum(normalized * normalized * np.array([-1, 1, 1, 1]))
+        # Check normalization: u^μ u_μ = -1 using proper metric tensor
+        norm = np.einsum("i,ij,j->", normalized, metric.g, normalized)
         assert abs(norm + 1.0) < 1e-10
 
     def test_constraint_validation(self, four_velocity_field):
@@ -325,8 +325,8 @@ class TestEnhancedFields:
         components = np.array([2.0, 0.0, 0.0, 0.0])
         constrained = field.apply_constraints(components)
 
-        # Check normalization
-        norm = np.sum(constrained * constrained * np.array([-1, 1, 1, 1]))
+        # Check normalization using proper metric
+        norm = np.einsum("i,ij,j->", constrained, metric.g, constrained)
         assert abs(norm + 1.0) < 1e-10
 
     def test_enhanced_shear_stress(self, metric):
@@ -486,8 +486,8 @@ def test_phase1_integration():
     components = np.array([2.0, 0.5, 0.3, 0.1])
     constrained = u_field.apply_constraints(components)
 
-    # Verify normalization
-    norm = np.sum(constrained * constrained * np.array([-1, 1, 1, 1]))
+    # Verify normalization using proper metric
+    norm = np.einsum("i,ij,j->", constrained, metric.g, constrained)
     assert abs(norm + 1.0) < 1e-10
 
     print("✅ Phase 1 tensor infrastructure integration test passed!")
