@@ -90,6 +90,37 @@ class NoiseCorrelator:
         self.x = IndexedBase("x")
         self.mu, self.nu = symbols("mu nu", integer=True)
 
+    def _get_4d_delta_function(self) -> sp.Expr:
+        """Create proper 4D spacetime delta function δ(t-t') δ³(x-x')."""
+        return (
+            sp.DiracDelta(self.x[0] - self.x[1])  # Time coordinate
+            * sp.DiracDelta(self.x[2] - self.x[3])  # x coordinate
+            * sp.DiracDelta(self.x[4] - self.x[5])  # y coordinate
+            * sp.DiracDelta(self.x[6] - self.x[7])  # z coordinate
+        )
+
+    def _get_minkowski_metric(self) -> sp.Matrix:
+        """Create symbolic Minkowski metric g^{μν} with signature (-,+,+,+)."""
+        return sp.Matrix(
+            [
+                [-1, 0, 0, 0],  # g^{00}, g^{01}, g^{02}, g^{03}
+                [0, 1, 0, 0],  # g^{10}, g^{11}, g^{12}, g^{13}
+                [0, 0, 1, 0],  # g^{20}, g^{21}, g^{22}, g^{23}
+                [0, 0, 0, 1],  # g^{30}, g^{31}, g^{32}, g^{33}
+            ]
+        )
+
+    def _get_rest_frame_velocity(self) -> sp.Matrix:
+        """Create rest frame four-velocity u^μ = (c, 0, 0, 0)."""
+        return sp.Matrix([PhysicalConstants.c, 0, 0, 0])
+
+    def _get_spatial_projector(self) -> sp.Matrix:
+        """Create spatial projector Δ^{μν} = g^{μν} + u^μu^ν/c²."""
+        g_metric = self._get_minkowski_metric()
+        u_components = self._get_rest_frame_velocity()
+        u_outer = u_components * u_components.T / PhysicalConstants.c**2
+        return g_metric + u_outer
+
     def velocity_velocity_correlator(self) -> sp.Expr:
         """
         Velocity field noise correlator: ⟨η_u^μ(x)η_u^ν(x')⟩.
@@ -97,14 +128,18 @@ class NoiseCorrelator:
         For momentum conservation, the correlator has the structure:
         D_uu^{μν}(x-x') = 2k_B T η/τ_π P^{μν}_T(x-x') δ⁴(x-x')
 
-        where P^{μν}_T is the transverse projector.
+        where P^{μν}_T = g^{μν} - u^μu^ν/c² is the transverse projector.
         """
-        delta_4d = sp.DiracDelta(self.x[0] - self.x[1]) * sp.DiracDelta(self.x[2] - self.x[3])
+        delta_4d = self._get_4d_delta_function()
 
-        # Transverse projector (spatial, traceless)
-        # P^{μν}_T = δ^{μν} - u^μu^ν/c² (simplified for background u^μ = (c,0,0,0))
-        kronecker = sp.KroneckerDelta
-        u_norm_factor = 1 / PhysicalConstants.c**2
+        # Transverse projector: P^{μν}_T = g^{μν} - u^μu^ν/c²
+        g_metric = self._get_minkowski_metric()
+        u_components = self._get_rest_frame_velocity()
+        u_outer = u_components * u_components.T / PhysicalConstants.c**2
+        P_transverse = g_metric - u_outer
+
+        # Extract the (μ,ν) component of the projector
+        transverse_projector = P_transverse[self.mu, self.nu]
 
         correlator = (
             2
@@ -112,7 +147,7 @@ class NoiseCorrelator:
             * self.temperature
             * self.parameters.eta
             / self.parameters.tau_pi
-            * (kronecker(self.mu, self.nu) - u_norm_factor)
+            * transverse_projector
             * delta_4d
         )
 
@@ -123,13 +158,29 @@ class NoiseCorrelator:
         Shear stress noise correlator: ⟨η_π^{μν}(x)η_π^{αβ}(x')⟩.
 
         Must respect the traceless, symmetric, spatial nature of shear stress.
-        Structure: D_ππ^{μναβ} = 2k_B T P^{μναβ}_TT δ⁴(x-x')
+        Structure: D_ππ^{μναβ} = 2k_B T η P^{μναβ}_TT δ⁴(x-x')
+
+        where P^{μναβ}_TT is the traceless-transverse projector:
+        P^{μναβ}_TT = 1/2 (Δ^{μα} Δ^{νβ} + Δ^{μβ} Δ^{να}) - 1/3 Δ^{μν} Δ^{αβ}
+        and Δ^{μν} = g^{μν} + u^μu^ν/c² is the spatial projector.
         """
         alpha, beta = symbols("alpha beta", integer=True)
-        delta_4d = sp.DiracDelta(self.x[0] - self.x[1]) * sp.DiracDelta(self.x[2] - self.x[3])
+        delta_4d = self._get_4d_delta_function()
 
-        # Simplified traceless-transverse projector coefficient
-        correlator = 2 * self.k_B * self.temperature * self.parameters.eta * delta_4d
+        # Spatial projector: Δ^{μν} = g^{μν} + u^μu^ν/c²
+        Delta = self._get_spatial_projector()
+
+        # Traceless-transverse projector components:
+        # P^{μναβ}_TT = 1/2 (Δ^{μα} Δ^{νβ} + Δ^{μβ} Δ^{να}) - 1/3 Δ^{μν} Δ^{αβ}
+        term1 = sp.Rational(1, 2) * (
+            Delta[self.mu, alpha] * Delta[self.nu, beta]
+            + Delta[self.mu, beta] * Delta[self.nu, alpha]
+        )
+        term2 = sp.Rational(1, 3) * Delta[self.mu, self.nu] * Delta[alpha, beta]
+
+        tt_projector = term1 - term2
+
+        correlator = 2 * self.k_B * self.temperature * self.parameters.eta * tt_projector * delta_4d
 
         return correlator
 
@@ -139,10 +190,8 @@ class NoiseCorrelator:
 
         Scalar field correlator: D_ΠΠ = 2k_B T ζ δ⁴(x-x')
         """
-        delta_4d = sp.DiracDelta(self.x[0] - self.x[1]) * sp.DiracDelta(self.x[2] - self.x[3])
-
+        delta_4d = self._get_4d_delta_function()
         correlator = 2 * self.k_B * self.temperature * self.parameters.zeta * delta_4d
-
         return correlator
 
     def heat_flux_correlator(self) -> sp.Expr:
@@ -151,21 +200,17 @@ class NoiseCorrelator:
 
         Vector field correlator with orthogonality constraint u_μ q^μ = 0.
         Structure: D_qq^{μν} = 2k_B T κ P^{μν}_⊥ δ⁴(x-x')
-        """
-        delta_4d = sp.DiracDelta(self.x[0] - self.x[1]) * sp.DiracDelta(self.x[2] - self.x[3])
 
-        # Orthogonal projector P^{μν}_⊥ = g^{μν} + u^μu^ν/c²
-        # For equilibrium background u^μ = (c,0,0,0), this simplifies
-        kronecker = sp.KroneckerDelta
-        u_correction = 1 / PhysicalConstants.c**2
+        where P^{μν}_⊥ = g^{μν} + u^μu^ν/c² is the spatial projector.
+        """
+        delta_4d = self._get_4d_delta_function()
+
+        # Spatial projector: P^{μν}_⊥ = g^{μν} + u^μu^ν/c²
+        P_spatial = self._get_spatial_projector()
+        spatial_projector = P_spatial[self.mu, self.nu]
 
         correlator = (
-            2
-            * self.k_B
-            * self.temperature
-            * self.parameters.kappa
-            * (kronecker(self.mu, self.nu) + u_correction)
-            * delta_4d
+            2 * self.k_B * self.temperature * self.parameters.kappa * spatial_projector * delta_4d
         )
 
         return correlator
@@ -177,11 +222,9 @@ class NoiseCorrelator:
         For energy conservation, typically very small or zero.
         We include it for completeness with a minimal form.
         """
-        delta_4d = sp.DiracDelta(self.x[0] - self.x[1]) * sp.DiracDelta(self.x[2] - self.x[3])
-
+        delta_4d = self._get_4d_delta_function()
         # Very weak noise for energy density (conservation requirement)
         correlator = 2 * self.k_B * self.temperature * sp.Rational(1, 1000) * delta_4d
-
         return correlator
 
     def get_full_correlator_matrix(self) -> sp.Matrix:

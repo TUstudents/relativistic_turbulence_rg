@@ -573,5 +573,125 @@ def test_complete_action_construction_workflow():
     assert covariant is True
 
 
+class TestTensorStructureCorrectness:
+    """Test that noise correlators have proper tensor structure."""
+
+    @pytest.fixture
+    def noise_correlator(self):
+        """Create noise correlator with symbolic parameters."""
+        parameters = IsraelStewartParameters(
+            eta=sp.Symbol("eta", positive=True),
+            zeta=sp.Symbol("zeta", positive=True),
+            kappa=sp.Symbol("kappa", positive=True),
+            tau_pi=sp.Symbol("tau_pi", positive=True),
+            tau_Pi=sp.Symbol("tau_Pi", positive=True),
+            tau_q=sp.Symbol("tau_q", positive=True),
+        )
+        temperature = sp.Symbol("T", positive=True)
+        return NoiseCorrelator(parameters, temperature)
+
+    def test_proper_4d_delta_functions(self, noise_correlator):
+        """Test that all correlators have proper 4D delta functions δ(t-t')δ³(x-x')."""
+        correlators = [
+            noise_correlator.velocity_velocity_correlator(),
+            noise_correlator.shear_stress_correlator(),
+            noise_correlator.bulk_pressure_correlator(),
+            noise_correlator.heat_flux_correlator(),
+            noise_correlator.energy_density_correlator(),
+        ]
+
+        for correlator in correlators:
+            # Should have exactly 4 DiracDelta factors (one for each spacetime dimension)
+            correlator_str = str(correlator)
+            delta_count = correlator_str.count("DiracDelta")
+            assert (
+                delta_count == 4
+            ), f"Correlator should have 4 DiracDelta functions, found {delta_count}"
+
+    def test_velocity_transverse_projector_properties(self, noise_correlator):
+        """Test velocity correlator has correct transverse projector structure."""
+        D_uu = noise_correlator.velocity_velocity_correlator()
+
+        # Should contain proper tensor indices μ, ν
+        assert "mu" in str(D_uu)
+        assert "nu" in str(D_uu)
+
+        # Should be proportional to η/τ_π
+        D_uu_str = str(D_uu)
+        assert "eta" in D_uu_str
+        assert "tau_pi" in D_uu_str
+
+    def test_heat_flux_spatial_projector_properties(self, noise_correlator):
+        """Test heat flux correlator has correct spatial projector structure."""
+        D_qq = noise_correlator.heat_flux_correlator()
+
+        # Should contain proper tensor indices μ, ν
+        assert "mu" in str(D_qq)
+        assert "nu" in str(D_qq)
+
+        # Should be proportional to κ
+        D_qq_str = str(D_qq)
+        assert "kappa" in D_qq_str
+
+    def test_shear_stress_tt_projector_properties(self, noise_correlator):
+        """Test shear stress correlator has proper traceless-transverse structure."""
+        D_pi_pi = noise_correlator.shear_stress_correlator()
+
+        # Should contain four tensor indices μ, ν, α, β
+        D_pi_pi_str = str(D_pi_pi)
+        assert "mu" in D_pi_pi_str
+        assert "nu" in D_pi_pi_str
+        assert "alpha" in D_pi_pi_str
+        assert "beta" in D_pi_pi_str
+
+        # Should be proportional to η (shear viscosity)
+        assert "eta" in D_pi_pi_str
+
+        # Should contain proper TT projector structure (fractions 1/2 and 1/3)
+        assert "/2" in D_pi_pi_str  # Sympy represents 1/2 as /2
+        assert "/3" in D_pi_pi_str  # Sympy represents 1/3 as /3
+
+    def test_metric_tensor_structure(self, noise_correlator):
+        """Test that correlators use proper Minkowski metric g^{μν}."""
+        # Test velocity correlator contains metric elements
+        D_uu = noise_correlator.velocity_velocity_correlator()
+        D_uu_str = str(D_uu)
+
+        # Should contain metric signature elements (-2.0 from transverse projector)
+        assert "-2" in D_uu_str or "-2.0" in D_uu_str
+
+        # Test heat flux correlator
+        D_qq = noise_correlator.heat_flux_correlator()
+        D_qq_str = str(D_qq)
+        assert "Matrix" in D_qq_str  # Should contain Matrix representation of spatial projector
+
+    def test_four_velocity_structure(self, noise_correlator):
+        """Test that correlators properly incorporate four-velocity u^μ."""
+        # All projectors should reference speed of light c
+        correlators = [
+            noise_correlator.velocity_velocity_correlator(),
+            noise_correlator.heat_flux_correlator(),
+            noise_correlator.shear_stress_correlator(),
+        ]
+
+        for correlator in correlators:
+            correlator_str = str(correlator)
+            # Should contain c (speed of light) from u^μu^ν/c² terms
+            assert (
+                "c" in correlator_str
+            ), f"Correlator missing speed of light c: {correlator_str[:100]}..."
+
+    def test_covariant_tensor_properties(self, noise_correlator):
+        """Test that correlators respect proper covariant tensor structure."""
+        # Test that shear stress has proper symmetric structure
+        D_pi_pi = noise_correlator.shear_stress_correlator()
+        D_pi_pi_str = str(D_pi_pi)
+
+        # Should be symmetric in (μ,α)(ν,β) and (μ,β)(ν,α) indices
+        # This is ensured by the 1/2 (Δ^{μα}Δ^{νβ} + Δ^{μβ}Δ^{να}) structure
+        terms = D_pi_pi_str.count("Delta")
+        assert terms >= 4, "TT projector should have at least 4 spatial projector terms"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

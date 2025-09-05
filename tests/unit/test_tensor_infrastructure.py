@@ -432,17 +432,17 @@ class TestTensorAwarePropagatorCalculator:
         """Create metric."""
         return Metric()
 
-    def test_tensor_aware_calculator_creation(self, mock_msrjd_action):
+    def test_tensor_aware_calculator_creation(self, mock_msrjd_action, metric):
         """Test creating tensor-aware propagator calculator."""
-        calc = TensorAwarePropagatorCalculator(mock_msrjd_action)
+        calc = TensorAwarePropagatorCalculator(mock_msrjd_action, metric)
 
         assert calc.enhanced_registry is not None
         assert calc.projector is not None
         assert calc.background_velocity is not None
 
-    def test_field_matrix_size_calculation(self, mock_msrjd_action):
+    def test_field_matrix_size_calculation(self, mock_msrjd_action, metric):
         """Test calculating matrix sizes for tensor fields."""
-        calc = TensorAwarePropagatorCalculator(mock_msrjd_action)
+        calc = TensorAwarePropagatorCalculator(mock_msrjd_action, metric)
 
         if calc.enhanced_registry:
             # Create enhanced fields for testing

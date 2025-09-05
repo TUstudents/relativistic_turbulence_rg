@@ -56,7 +56,7 @@ from .tensors import (
 
 
 def symbolic_four_gradient(
-    field: sp.Function | sp.Expr, coords: tuple[sp.Symbol, ...] = None
+    field: sp.Function | sp.Expr, coords: tuple[sp.Symbol, ...] | None = None
 ) -> sp.Expr:
     """
     Compute the 4-gradient (∇^μ) of a scalar field or expression.
@@ -457,17 +457,17 @@ class Field(ABC):
             except ValueError:
                 # Fallback to coordinate trace if metric trace fails
                 trace = tensor.trace()
-                if isinstance(trace, int | float | complex):
+                if isinstance(trace, (int, float, complex)):
                     return abs(trace) < 1e-12
-                else:
-                    return np.allclose(trace.components, 0, atol=1e-12)
+                # trace is a tensor object, check components
+                return np.allclose(trace.components, 0, atol=1e-12)  # type: ignore[unreachable]
 
         # For higher rank tensors, use existing logic
         trace = tensor.trace()
-        if isinstance(trace, int | float | complex):
+        if isinstance(trace, (int, float, complex)):
             return abs(trace) < 1e-12
-        else:
-            return np.allclose(trace.components, 0, atol=1e-12)
+        # trace is a tensor object, check components
+        return np.allclose(trace.components, 0, atol=1e-12)  # type: ignore[unreachable]
 
     @abstractmethod
     def evolution_equation(self, **kwargs: Any) -> sp.Expr:
