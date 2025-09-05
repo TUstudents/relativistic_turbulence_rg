@@ -364,11 +364,19 @@ class LorentzTensor:
         # Handle metric tensor for same-variance index pairs
         tensor_self = self
         tensor_other = other
-        
+
         for self_idx, other_idx in index_pairs:
-            self_type = self.indices.types[self_idx] if self_idx < len(self.indices.types) else "contravariant"
-            other_type = other.indices.types[other_idx] if other_idx < len(other.indices.types) else "contravariant"
-            
+            self_type = (
+                self.indices.types[self_idx]
+                if self_idx < len(self.indices.types)
+                else "contravariant"
+            )
+            other_type = (
+                other.indices.types[other_idx]
+                if other_idx < len(other.indices.types)
+                else "contravariant"
+            )
+
             # If both indices have same variance, need to use metric to make one opposite
             if self_type == other_type:
                 if self_type == "contravariant":
@@ -376,7 +384,7 @@ class LorentzTensor:
                     # u^μ v^ν → u^μ v_ν (with g_μν)
                     tensor_other = tensor_other.lower_index(other_idx)
                 elif self_type == "covariant":
-                    # Both covariant: raise the other tensor's index  
+                    # Both covariant: raise the other tensor's index
                     # u_μ v_ν → u_μ v^ν (with g^μν)
                     tensor_other = tensor_other.raise_index(other_idx)
 
@@ -390,7 +398,10 @@ class LorentzTensor:
         if result_components.ndim == 0:
             # Extract scalar value (handles both real and complex cases)
             scalar_value = result_components.item()
-            return scalar_value
+            if np.isreal(scalar_value):
+                return float(np.real(scalar_value))
+            else:
+                return complex(scalar_value)
 
         # Build result index structure for non-scalar results
         result_indices = self._build_result_indices_contraction(other, index_pairs)
@@ -446,42 +457,117 @@ class LorentzTensor:
 
         return LorentzTensor(result, new_indices, self.metric)
 
-    def trace(self, index_pair: tuple[int, int] | None = None) -> Union["LorentzTensor", complex]:
-        """Take trace over specified indices
+    def _compute_metric_aware_trace(self, idx1: int, idx2: int) -> float | complex:
+        """
+        Compute metric-aware trace for specified indices.
+
+        For Lorentz-invariant traces:
+        - Contravariant-contravariant: g_{μν} T^{μν}
+        - Covariant-covariant: g^{μν} T_{μν}
+        - Mixed indices: T^μ_μ (coordinate trace)
 
         Args:
-            index_pair: Pair of indices to trace over (default: all if rank=2)
+            idx1, idx2: Indices to trace over
 
         Returns:
-            Tensor with reduced rank, or scalar if rank becomes 0
+            Scalar trace value
         """
-        if self.rank == 0:
-            raise ValueError("Cannot take trace of scalar")
+        # Get index types for traced indices
+        type1 = self.indices.types[idx1] if idx1 < len(self.indices.types) else "contravariant"
+        type2 = self.indices.types[idx2] if idx2 < len(self.indices.types) else "contravariant"
 
-        if index_pair is None and self.rank == 2:
-            # Trace over both indices
-            trace_val = np.trace(self.components)
-            return trace_val  # type: ignore[no-any-return]
-        elif index_pair is None:
-            raise ValueError("Must specify index pair for rank > 2 tensors")
+        components = self.components
 
-        # Trace over specified indices
-        i, j = index_pair
-        axes = (i, j)
-        result = np.trace(self.components, axis1=i, axis2=j)
+        if type1 == type2:
+            # Same variance - need metric contraction
+            if type1 == "contravariant":
+                # Both contravariant: g_{μν} T^{μν}
+                if self.rank == 2:
+                    trace_val = np.einsum("ab,ab->", self.metric.g, components)
+                else:
+                    # For higher rank, contract with metric along specified axes
+                    trace_val = np.tensordot(self.metric.g, components, axes=([0, 1], [idx1, idx2]))
+            else:
+                # Both covariant: g^{μν} T_{μν}
+                g_inv = np.linalg.inv(self.metric.g)
+                if self.rank == 2:
+                    trace_val = np.einsum("ab,ab->", g_inv, components)
+                else:
+                    trace_val = np.tensordot(g_inv, components, axes=([0, 1], [idx1, idx2]))
+        else:
+            # Mixed variance - coordinate trace is correct
+            if self.rank == 2:
+                trace_val = np.trace(components)
+            else:
+                trace_val = np.trace(components, axis1=idx1, axis2=idx2)
 
-        # Build result index structure
+        # Return scalar value (handle complex case)
+        scalar_val = trace_val.item() if hasattr(trace_val, "item") else trace_val
+        if np.isreal(scalar_val):
+            return float(np.real(scalar_val))
+        else:
+            return complex(scalar_val)
+
+    def _compute_metric_aware_partial_trace(self, idx1: int, idx2: int) -> "LorentzTensor":
+        """
+        Compute metric-aware partial trace for tensors of rank > 2.
+
+        Returns a LorentzTensor with two indices traced out.
+        """
+        # This is more complex - for now, fall back to coordinate trace
+        # TODO: Implement full metric-aware partial traces for higher-rank tensors
+        result_components = np.trace(self.components, axis1=idx1, axis2=idx2)
+
+        # Build result index structure (remove traced indices)
+        axes = (idx1, idx2)
         remaining_names = [name for k, name in enumerate(self.indices.names) if k not in axes]
         remaining_types = [typ for k, typ in enumerate(self.indices.types) if k not in axes]
         remaining_symmetries = [
             sym for k, sym in enumerate(self.indices.symmetries) if k not in axes
         ]
 
-        if len(remaining_names) == 0:
-            return result  # type: ignore[no-any-return]
-
         result_indices = IndexStructure(remaining_names, remaining_types, remaining_symmetries)
-        return LorentzTensor(result, result_indices, self.metric)
+        return LorentzTensor(result_components, result_indices, self.metric)
+
+    def trace(
+        self, index_pair: tuple[int, int] | None = None
+    ) -> Union["LorentzTensor", float, complex]:
+        """
+        Take Lorentz-invariant trace over specified indices.
+
+        Computes proper metric-aware trace based on index variance:
+        - Contravariant-contravariant: g_{μν} T^{μν}
+        - Covariant-covariant: g^{μν} T_{μν}
+        - Mixed indices: T^μ_μ (coordinate trace)
+
+        Args:
+            index_pair: Pair of indices to trace over (default: all if rank=2)
+
+        Returns:
+            For rank-2: Scalar (float/complex) result
+            For rank>2: LorentzTensor with reduced rank
+        """
+        if self.rank == 0:
+            raise ValueError("Cannot take trace of scalar")
+
+        if index_pair is None and self.rank == 2:
+            # Trace over both indices with metric awareness
+            trace_val = self._compute_metric_aware_trace(0, 1)
+            return trace_val
+        elif index_pair is None:
+            raise ValueError("Must specify index pair for rank > 2 tensors")
+
+        # Trace over specified indices with metric awareness
+        i, j = index_pair
+        axes = (i, j)
+
+        # For rank > 2, we need to handle the case where we get a scalar vs tensor result
+        if self.rank == 2:
+            # Scalar result
+            return self._compute_metric_aware_trace(i, j)
+        else:
+            # Tensor result - partial trace method handles everything
+            return self._compute_metric_aware_partial_trace(i, j)
 
     def raise_index(self, position: int) -> "LorentzTensor":
         """Raise index at given position"""
@@ -618,11 +704,17 @@ class LorentzTensor:
         v_dot_u = self.contract(reference, [(0, 0)])
         u_dot_u = reference.contract(reference, [(0, 0)])
 
-        if abs(u_dot_u) < 1e-14:
+        if isinstance(u_dot_u, LorentzTensor):
+            raise ValueError("Vector contraction should return scalar, got tensor")
+        u_norm = u_dot_u
+        if abs(u_norm) < 1e-14:
             raise ValueError("Cannot orthogonalize against zero vector")
 
         # v' = v - (v·u/u·u) u
-        projection_coeff = v_dot_u / u_dot_u  # type: ignore[operator]
+        if isinstance(v_dot_u, LorentzTensor):
+            raise ValueError("Vector contraction should return scalar, got tensor")
+        v_dot_u_val = v_dot_u
+        projection_coeff = v_dot_u_val / u_norm
         orthogonal_components = self.components - projection_coeff * reference.components
 
         return LorentzTensor(orthogonal_components, self.indices, self.metric)
@@ -637,7 +729,10 @@ class LorentzTensor:
         #         + (T^ρσ u_ρ u_σ / (u·u)²) u^μ u^ν
 
         u_dot_u = reference.contract(reference, [(0, 0)])
-        if abs(u_dot_u) < 1e-14:
+        if isinstance(u_dot_u, LorentzTensor):
+            raise ValueError("Vector contraction should return scalar, got tensor")
+        u_norm = u_dot_u
+        if abs(u_norm) < 1e-14:
             raise ValueError("Cannot orthogonalize against zero vector")
 
         orthogonal_components = self.components.copy()
@@ -665,12 +760,9 @@ class LorentzTensor:
 
                 # Apply orthogonalization
                 orthogonal_components[mu, nu] -= (
-                    first_proj * reference.components[nu] / u_dot_u
-                    + second_proj * reference.components[mu] / u_dot_u
-                    - trace_term
-                    * reference.components[mu]
-                    * reference.components[nu]
-                    / (u_dot_u**2)  # type: ignore[operator]
+                    first_proj * reference.components[nu] / u_norm
+                    + second_proj * reference.components[mu] / u_norm
+                    - trace_term * reference.components[mu] * reference.components[nu] / (u_norm**2)
                 )
 
         return LorentzTensor(orthogonal_components, self.indices, self.metric)
@@ -699,7 +791,10 @@ class LorentzTensor:
 
         elif constraint_type == "traceless":
             trace = self.trace()
-            violation = abs(trace)  # type: ignore[arg-type]
+            if isinstance(trace, LorentzTensor):
+                raise ValueError("Trace should return scalar, got tensor")
+            trace_val = trace
+            violation = abs(trace_val)
             return violation < tolerance, float(violation)
 
         elif constraint_type == "orthogonal":
@@ -709,7 +804,10 @@ class LorentzTensor:
 
             if self.rank == 1:
                 dot_product = self.contract(reference, [(0, 0)])
-                violation = abs(dot_product)
+                if isinstance(dot_product, LorentzTensor):
+                    raise ValueError("Vector contraction should return scalar, got tensor")
+                dot_val = dot_product
+                violation = abs(dot_val)
                 return violation < tolerance, float(violation)
             elif self.rank == 2:
                 # Check T^μν u_ν = 0 for all μ
@@ -816,13 +914,16 @@ class LorentzTensor:
         # Calculate k² = k^μk_μ
         k_lower = momentum.lower_index(0)
         k_squared = momentum.contract(k_lower, [(0, 0)])
+        if isinstance(k_squared, LorentzTensor):
+            raise ValueError("Vector contraction should return scalar, got tensor")
+        k_sq_val = k_squared
 
-        if abs(k_squared) < 1e-14:
+        if abs(k_sq_val) < 1e-14:
             raise ValueError("Cannot create longitudinal projector for zero momentum")
 
         # Create k^μk^ν/k² projector
         k_outer = np.outer(momentum.components, momentum.components)
-        projector_components = k_outer / k_squared
+        projector_components = k_outer / k_sq_val
 
         # Create index structure
         proj_indices = IndexStructure(
@@ -894,14 +995,24 @@ class LorentzTensor:
         # Scalar mode: trace with spatial projector
         # T_scalar = (1/3) Δ^μν T_μν Δ^ρσ
         trace = self.trace()
-        scalar_components = (trace / 3.0) * spatial_proj.components  # type: ignore[operator]
+        if isinstance(trace, LorentzTensor):
+            raise ValueError("Trace should return scalar, got tensor")
+        trace_val = trace
+        scalar_components = (trace_val / 3.0) * spatial_proj.components
 
         # Vector mode: longitudinal part
         # T_vector^μν = P_L^μρ T_ρσ + T_ρσ P_L^σν - (2/3) P_L^μν T_ρ^ρ
+        # Vector mode contractions should return tensors, not scalars
+        long_self = long_proj.contract(self, [(1, 0)])
+        self_long = self.contract(long_proj, [(1, 0)])
+
+        if not isinstance(long_self, LorentzTensor) or not isinstance(self_long, LorentzTensor):
+            raise ValueError("Vector mode contractions should produce tensors")
+
         vector_components = (
-            long_proj.contract(self, [(1, 0)]).components
-            + self.contract(long_proj, [(1, 0)]).components
-            - (2.0 / 3.0) * trace * long_proj.components  # type: ignore[operator]
+            long_self.components
+            + self_long.components
+            - (2.0 / 3.0) * trace_val * long_proj.components
         )
 
         # Tensor mode: transverse traceless part

@@ -19,8 +19,9 @@ Note:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
@@ -394,9 +395,9 @@ def verify_projector_idempotency(h: np.ndarray, tolerance: float = 1e-12) -> tup
 
 
 def test_all_reference_frames(
-    state_generator: Callable[[str], tuple[dict[str, Any], np.ndarray]], 
-    frames: list[str] = None, 
-    tolerance: float = 1e-12
+    state_generator: Callable[[str], tuple[dict[str, Any], np.ndarray]],
+    frames: list[str] = None,
+    tolerance: float = 1e-12,
 ) -> dict[str, ValidationReport]:
     """Test constraint validation across different reference frames.
 

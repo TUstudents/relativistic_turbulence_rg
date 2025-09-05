@@ -664,8 +664,7 @@ class TestAdvancedPropagatorFeatures:
         # Test both quantum and classical FDT
         for use_quantum in [True, False]:
             G_K = calc.enhanced_fdt_relation(
-                velocity_field, velocity_field,
-                use_quantum_statistics=use_quantum
+                velocity_field, velocity_field, use_quantum_statistics=use_quantum
             )
 
             assert G_K is not None
@@ -680,9 +679,9 @@ class TestAdvancedPropagatorFeatures:
 
         # Test different frequency/temperature ratios
         test_cases = [
-            (0.1, 1.0, "classical"),   # ω << T
-            (1.0, 1.0, "crossover"),   # ω ~ T
-            (10.0, 1.0, "quantum")     # ω >> T
+            (0.1, 1.0, "classical"),  # ω << T
+            (1.0, 1.0, "crossover"),  # ω ~ T
+            (10.0, 1.0, "quantum"),  # ω >> T
         ]
 
         for omega_char, temp, _expected_regime in test_cases:
@@ -722,15 +721,12 @@ class TestAdvancedPropagatorFeatures:
 
         # Test enhanced FDT mode
         G_K_enhanced = calc.calculate_keldysh_propagator(
-            velocity_field, velocity_field,
-            use_enhanced_fdt=True,
-            use_quantum_statistics=True
+            velocity_field, velocity_field, use_enhanced_fdt=True, use_quantum_statistics=True
         )
 
         # Test classical FDT mode
         G_K_classical = calc.calculate_keldysh_propagator(
-            velocity_field, velocity_field,
-            use_enhanced_fdt=False
+            velocity_field, velocity_field, use_enhanced_fdt=False
         )
 
         assert G_K_enhanced is not None
@@ -751,9 +747,7 @@ class TestAdvancedPropagatorFeatures:
 
         # Test with omega range for full analysis
         result = calc.enhanced_spectral_function(
-            velocity_field, velocity_field,
-            omega_range=(-3.0, 3.0),
-            k_val=1.0
+            velocity_field, velocity_field, omega_range=(-3.0, 3.0), k_val=1.0
         )
 
         assert isinstance(result, dict)
@@ -782,9 +776,11 @@ class TestAdvancedPropagatorFeatures:
         omega_points = np.linspace(-5, 5, 1000)
 
         # Synthetic spectral function with Lorentzian peaks
-        spectral_values = (0.5 / ((omega_points - 1.0)**2 + 0.1**2) +
-                          0.3 / ((omega_points + 1.5)**2 + 0.2**2) +
-                          0.1 * np.exp(-omega_points**2))  # Background
+        spectral_values = (
+            0.5 / ((omega_points - 1.0) ** 2 + 0.1**2)
+            + 0.3 / ((omega_points + 1.5) ** 2 + 0.2**2)
+            + 0.1 * np.exp(-(omega_points**2))
+        )  # Background
 
         peaks = calc._find_spectral_peaks(omega_points, spectral_values)
 
@@ -805,8 +801,8 @@ class TestAdvancedPropagatorFeatures:
         # Create synthetic peaks
         test_peaks = [
             {"frequency": 1.0, "height": 0.5, "width": 0.2},  # Propagating mode
-            {"frequency": 0.05, "height": 0.3, "width": 0.5}, # Diffusive mode
-            {"frequency": 10.0, "height": 0.1, "width": 0.1}   # Unphysical mode
+            {"frequency": 0.05, "height": 0.3, "width": 0.5},  # Diffusive mode
+            {"frequency": 10.0, "height": 0.1, "width": 0.1},  # Unphysical mode
         ]
 
         omega_points = np.linspace(-5, 5, 100)
@@ -829,9 +825,7 @@ class TestAdvancedPropagatorFeatures:
         velocity_field = next(f for f in fields if f.name == "u")
 
         result = calc.verify_enhanced_sum_rules(
-            velocity_field, velocity_field,
-            omega_range=(-5.0, 5.0),
-            k_val=1.0
+            velocity_field, velocity_field, omega_range=(-5.0, 5.0), k_val=1.0
         )
 
         assert isinstance(result, dict)
@@ -855,9 +849,7 @@ class TestAdvancedPropagatorFeatures:
         velocity_field = next(f for f in fields if f.name == "u")
 
         result = calc.check_kramers_kronig_consistency(
-            velocity_field, velocity_field,
-            omega_range=(-3.0, 3.0),
-            k_val=1.0
+            velocity_field, velocity_field, omega_range=(-3.0, 3.0), k_val=1.0
         )
 
         assert isinstance(result, dict)
@@ -879,9 +871,7 @@ class TestAdvancedPropagatorFeatures:
         k_range = np.array([0.5, 1.0, 1.5])  # Small range for testing
 
         result = calc.find_propagator_poles_systematic(
-            velocity_field, velocity_field,
-            k_range=k_range,
-            omega_search_range=(-3-3j, 3+3j)
+            velocity_field, velocity_field, k_range=k_range, omega_search_range=(-3 - 3j, 3 + 3j)
         )
 
         assert isinstance(result, dict)
@@ -901,10 +891,10 @@ class TestAdvancedPropagatorFeatures:
 
         # Test different types of poles
         test_poles = [
-            complex(1.0, -0.1),   # Sound mode (causal)
-            complex(0.1, -0.5),   # Diffusive mode
-            complex(2.0, 0.1),    # Unphysical (non-causal)
-            complex(0.0, -1.0)    # Relaxation mode
+            complex(1.0, -0.1),  # Sound mode (causal)
+            complex(0.1, -0.5),  # Diffusive mode
+            complex(2.0, 0.1),  # Unphysical (non-causal)
+            complex(0.0, -1.0),  # Relaxation mode
         ]
 
         k_val = 1.0
@@ -934,17 +924,21 @@ class TestAdvancedPropagatorFeatures:
         # Add sound mode poles: ω = ±c_s k - iΓk²
         for k_val in k_range:
             # Positive branch
-            pole_data.append({
-                "pole": complex(sound_speed * k_val, -damping * k_val**2),
-                "momentum": k_val,
-                "classification": {"mode_type": "sound"}
-            })
+            pole_data.append(
+                {
+                    "pole": complex(sound_speed * k_val, -damping * k_val**2),
+                    "momentum": k_val,
+                    "classification": {"mode_type": "sound"},
+                }
+            )
             # Negative branch
-            pole_data.append({
-                "pole": complex(-sound_speed * k_val, -damping * k_val**2),
-                "momentum": k_val,
-                "classification": {"mode_type": "sound"}
-            })
+            pole_data.append(
+                {
+                    "pole": complex(-sound_speed * k_val, -damping * k_val**2),
+                    "momentum": k_val,
+                    "classification": {"mode_type": "sound"},
+                }
+            )
 
         dispersion_result = calc._extract_dispersion_relations(pole_data, k_range)
 
@@ -967,8 +961,7 @@ class TestAdvancedPropagatorFeatures:
         k_range = np.array([0.5, 1.0, 1.5])  # Small range for testing
 
         result = calc.analyze_mode_structure_complete(
-            velocity_field, velocity_field,
-            k_range=k_range
+            velocity_field, velocity_field, k_range=k_range
         )
 
         assert isinstance(result, dict)
@@ -997,13 +990,7 @@ class TestAdvancedPropagatorFeatures:
 
         # Create mock data
         pole_analysis = {
-            "poles_by_momentum": {
-                1.0: {
-                    "classified_poles": {
-                        "hydrodynamic": [{"real_part": 0.5}]
-                    }
-                }
-            }
+            "poles_by_momentum": {1.0: {"classified_poles": {"hydrodynamic": [{"real_part": 0.5}]}}}
         }
 
         spectral_analyses = {
@@ -1031,24 +1018,14 @@ class TestAdvancedPropagatorFeatures:
         pole_analysis = {
             "dispersion_relations": {
                 "sound_modes": {
-                    "positive_branch": {
-                        "sound_speed": 0.5,
-                        "damping_coefficient": 0.1
-                    }
+                    "positive_branch": {"sound_speed": 0.5, "damping_coefficient": 0.1}
                 },
-                "diffusive_modes": {
-                    "diffusivity": 0.2
-                }
+                "diffusive_modes": {"diffusivity": 0.2},
             }
         }
 
         spectral_analyses = {
-            1.0: {
-                "transport_coefficients": {
-                    "sound_speed_avg": 0.48,
-                    "diffusivity_avg": 0.22
-                }
-            }
+            1.0: {"transport_coefficients": {"sound_speed_avg": 0.48, "diffusivity_avg": 0.22}}
         }
 
         parameters = calc._extract_physical_parameters(pole_analysis, spectral_analyses)

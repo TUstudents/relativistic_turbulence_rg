@@ -171,10 +171,10 @@ class TestLorentzTensor:
         symmetric_g = g.symmetrize()
         assert_allclose(symmetric_g.components, g.components)
 
-        # Trace should be dimension (in signature (-,+,+,+) it's -1+1+1+1 = 2)
-        # No wait, trace of metric in (-,+,+,+) is -1+1+1+1 = 2
+        # Metric trace: g_{μν} is covariant-covariant, so trace = g^{μν} g_{μν} = spacetime dimension
+        # This is a fundamental property: g^{μν} g_{μν} = δ^μ_μ = dimension = 4
         trace = g.trace()
-        expected_trace = np.trace(self.metric.g)  # This is 2
+        expected_trace = 4.0  # Spacetime dimension
         assert_allclose(trace, expected_trace)
 
     def test_tensor_contraction(self):
@@ -226,11 +226,13 @@ class TestLorentzTensor:
 
     def test_trace_operations(self):
         """Test tensor trace operations"""
-        # Trace of stress tensor: T^μ_μ = T^00 + T^11 + T^22 + T^33
+        # Trace of stress tensor with metric: g_{μν} T^{μν}
         trace = self.stress_tensor.trace()
 
-        # For perfect fluid: ρ + 3p
-        expected = 1.0 + 3 * 0.3  # ρ + 3p = 1.9
+        # For perfect fluid with contravariant indices: g_{μν} T^{μν} = ρ - 3p
+        # With signature (-,+,+,+): g_{00}T^{00} + g_{11}T^{11} + g_{22}T^{22} + g_{33}T^{33}
+        # = (-1)(ρ) + (1)(p) + (1)(p) + (1)(p) = -ρ + 3p
+        expected = -1.0 + 3 * 0.3  # -ρ + 3p = -0.1
         assert_allclose(trace, expected)
 
         # Trace of metric: g^μ_μ = 4 (dimension)
@@ -525,7 +527,7 @@ class TestTensorContractionBugFixes:
         result = u_up.contract(u_down, [(0, 0)])
 
         # Should be Python scalar, not LorentzTensor
-        assert isinstance(result, (float, complex)), f"Expected scalar, got {type(result)}"
+        assert isinstance(result, float | complex), f"Expected scalar, got {type(result)}"
         assert not hasattr(result, "rank"), "Scalar result should not have tensor properties"
 
         # Should work with abs() function (this was the original bug)
@@ -606,14 +608,16 @@ class TestTensorContractionBugFixes:
         """Test that four-velocity normalization works correctly with fixed contractions"""
         # Create normalized four-velocity in rest frame
         indices_up = IndexStructure(["mu"], ["contravariant"], ["none"])
-        u_up = LorentzTensor(np.array([PhysicalConstants.c, 0.0, 0.0, 0.0]), indices_up, self.metric)
+        u_up = LorentzTensor(
+            np.array([PhysicalConstants.c, 0.0, 0.0, 0.0]), indices_up, self.metric
+        )
         u_down = u_up.lower_index(0)
 
         # Contract to get u^μ u_μ (should be -c²)
         norm_squared = u_up.contract(u_down, [(0, 0)])
 
         # Should be scalar and equal to -c²
-        assert isinstance(norm_squared, (float, complex))
+        assert isinstance(norm_squared, float | complex)
         expected = -(PhysicalConstants.c**2)
         assert_allclose(norm_squared.real, expected, rtol=1e-12)
 
@@ -634,13 +638,189 @@ class TestTensorContractionBugFixes:
 
         # Lower index for proper contraction
         v_down = v.lower_index(0)
-        
+
         # Check orthogonality: u^μ v_μ should be 0
         orthogonality = u.contract(v_down, [(0, 0)])
 
         # Should be scalar and close to zero
-        assert isinstance(orthogonality, (float, complex))
+        assert isinstance(orthogonality, float | complex)
         assert abs(orthogonality) < 1e-12, f"Expected orthogonality, got {orthogonality}"
+
+
+class TestMetricAwareTraceBugFixes:
+    """Test fixes for metric-aware trace bugs identified in chatgpt_buglist.md"""
+
+    def setup_method(self):
+        """Set up test tensors and metric"""
+        self.metric = Metric()
+
+    def test_contravariant_contravariant_trace(self):
+        """Test trace for contravariant-contravariant tensors uses g_{μν}"""
+        # Create T^μν tensor
+        indices_up = IndexStructure(
+            ["mu", "nu"], ["contravariant", "contravariant"], ["none", "none"]
+        )
+
+        # Use simple diagonal tensor for clear math
+        components = np.array([[1, 0, 0, 0], [0, 2, 0, 0], [0, 0, 3, 0], [0, 0, 0, 4]])
+        tensor_up = LorentzTensor(components, indices_up, self.metric)
+
+        # Get metric-aware trace
+        trace_result = tensor_up.trace()
+
+        # Manual calculation: g_{μν} T^{μν} with signature (-,+,+,+)
+        # = g_{00}T^{00} + g_{11}T^{11} + g_{22}T^{22} + g_{33}T^{33}
+        # = (-1)(1) + (1)(2) + (1)(3) + (1)(4) = -1 + 2 + 3 + 4 = 8
+        expected_trace = np.einsum("ab,ab->", self.metric.g, components)
+
+        assert_allclose(trace_result.real, expected_trace.real, rtol=1e-12)
+
+        # Verify it's different from coordinate trace
+        coord_trace = np.trace(components)
+        assert abs(trace_result - coord_trace) > 1e-6, "Should differ from coordinate trace"
+
+    def test_covariant_covariant_trace(self):
+        """Test trace for covariant-covariant tensors uses g^{μν}"""
+        # Create T_{μν} tensor
+        indices_down = IndexStructure(["mu", "nu"], ["covariant", "covariant"], ["none", "none"])
+
+        components = np.array([[1, 0, 0, 0], [0, 2, 0, 0], [0, 0, 3, 0], [0, 0, 0, 4]])
+        tensor_down = LorentzTensor(components, indices_down, self.metric)
+
+        # Get metric-aware trace
+        trace_result = tensor_down.trace()
+
+        # Manual calculation: g^{μν} T_{μν}
+        g_inv = np.linalg.inv(self.metric.g)
+        expected_trace = np.einsum("ab,ab->", g_inv, components)
+
+        assert_allclose(trace_result.real, expected_trace.real, rtol=1e-12)
+
+    def test_mixed_indices_trace_unchanged(self):
+        """Test trace for mixed indices T^μ_ν still uses coordinate trace"""
+        # Create T^μ_ν tensor
+        indices_mixed = IndexStructure(
+            ["mu", "nu"], ["contravariant", "covariant"], ["none", "none"]
+        )
+
+        components = np.array([[1, 0, 0, 0], [0, 2, 0, 0], [0, 0, 3, 0], [0, 0, 0, 4]])
+        tensor_mixed = LorentzTensor(components, indices_mixed, self.metric)
+
+        # Get trace
+        trace_result = tensor_mixed.trace()
+
+        # For mixed indices, coordinate trace is correct: T^μ_μ
+        expected_trace = np.trace(components)
+
+        assert_allclose(trace_result.real, expected_trace.real, rtol=1e-12)
+
+    def test_perfect_fluid_stress_tensor_trace(self):
+        """Test physically correct trace for perfect fluid stress-energy tensor"""
+        # Perfect fluid: T^{μν} = diag(ρ, p, p, p) in rest frame
+        rho = 2.5  # Energy density
+        p = 0.8  # Pressure
+
+        indices_up = IndexStructure(
+            ["mu", "nu"], ["contravariant", "contravariant"], ["symmetric", "symmetric"]
+        )
+        T_components = np.diag([rho, p, p, p])
+        T_tensor = LorentzTensor(T_components, indices_up, self.metric)
+
+        # Get trace
+        trace = T_tensor.trace()
+
+        # Physics: For contravariant perfect fluid, g_{μν}T^{μν} = -ρ + 3p
+        expected_physics = -rho + 3 * p
+        assert_allclose(trace.real, expected_physics, rtol=1e-12)
+
+        # Verify this is NOT the coordinate trace
+        coord_trace = rho + 3 * p  # Wrong physics
+        assert abs(trace.real - coord_trace) > 1e-6, "Should not equal coordinate trace"
+
+    def test_metric_tensor_trace(self):
+        """Test metric tensor trace gives spacetime dimension"""
+        # Create metric tensor g_{μν}
+        indices_down = IndexStructure(
+            ["mu", "nu"], ["covariant", "covariant"], ["symmetric", "symmetric"]
+        )
+        g_tensor = LorentzTensor(self.metric.g, indices_down, self.metric)
+
+        # Get trace: g^{μν} g_{μν}
+        trace = g_tensor.trace()
+
+        # Should equal spacetime dimension
+        expected = 4.0  # 4D spacetime
+        assert_allclose(trace.real, expected, rtol=1e-12)
+
+        # Create inverse metric tensor g^{μν}
+        indices_up = IndexStructure(
+            ["mu", "nu"], ["contravariant", "contravariant"], ["symmetric", "symmetric"]
+        )
+        g_inv_components = np.linalg.inv(self.metric.g)
+        g_inv_tensor = LorentzTensor(g_inv_components, indices_up, self.metric)
+
+        # Trace: g_{μν} g^{μν} should also be 4
+        inv_trace = g_inv_tensor.trace()
+        assert_allclose(inv_trace.real, expected, rtol=1e-12)
+
+    def test_electromagnetic_stress_tensor_trace(self):
+        """Test trace of electromagnetic stress tensor"""
+        # Electromagnetic stress tensor: T^{μν} = (1/μ₀)[F^{μα}F_α^ν - (1/4)g^{μν}F_{αβ}F^{αβ}]
+        # For plane wave: T^{μν} = (ε₀E²/2) diag(1, 1, -1, -1) in certain frame
+        # This gives trace = 0 (traceless for radiation)
+
+        E_squared_factor = 1.5  # Some field strength
+        indices_up = IndexStructure(
+            ["mu", "nu"], ["contravariant", "contravariant"], ["symmetric", "symmetric"]
+        )
+
+        # Electromagnetic tensor (traceless form)
+        em_components = E_squared_factor * np.diag([1, 1, -1, -1])
+        em_tensor = LorentzTensor(em_components, indices_up, self.metric)
+
+        # Get trace
+        trace = em_tensor.trace()
+
+        # Should be zero (traceless)
+        # g_{μν}T^{μν} = E²[(-1)(1) + (1)(1) + (1)(-1) + (1)(-1)] = E²[-1+1-1-1] = -2E²
+        expected_trace = E_squared_factor * (-1 + 1 - 1 - 1)  # -2 * E_squared_factor
+        assert_allclose(trace.real, expected_trace, rtol=1e-12)
+
+    def test_trace_with_specific_index_pairs(self):
+        """Test trace with specific index pairs specified"""
+        # Create rank-3 tensor T^{μνρ}
+        indices = IndexStructure(
+            ["mu", "nu", "rho"],
+            ["contravariant", "contravariant", "contravariant"],
+            ["none", "none", "none"],
+        )
+        components = np.random.rand(4, 4, 4)
+        tensor = LorentzTensor(components, indices, self.metric)
+
+        # Trace over first two indices: should reduce to rank-1
+        result = tensor.trace((0, 1))
+        assert isinstance(result, LorentzTensor)
+        assert result.rank == 1
+
+    def test_return_types_for_different_ranks(self):
+        """Test that trace returns correct types for different tensor ranks"""
+        # Rank-2 tensor should return scalar
+        indices_2 = IndexStructure(
+            ["mu", "nu"], ["contravariant", "contravariant"], ["none", "none"]
+        )
+        tensor_2 = LorentzTensor(np.eye(4), indices_2, self.metric)
+        trace_2 = tensor_2.trace()
+        assert isinstance(trace_2, float | complex), f"Expected scalar, got {type(trace_2)}"
+
+        # Rank-3 tensor should return LorentzTensor
+        indices_3 = IndexStructure(
+            ["mu", "nu", "rho"],
+            ["contravariant", "contravariant", "contravariant"],
+            ["none", "none", "none"],
+        )
+        tensor_3 = LorentzTensor(np.random.rand(4, 4, 4), indices_3, self.metric)
+        trace_3 = tensor_3.trace((0, 1))
+        assert isinstance(trace_3, LorentzTensor), f"Expected LorentzTensor, got {type(trace_3)}"
 
 
 if __name__ == "__main__":
