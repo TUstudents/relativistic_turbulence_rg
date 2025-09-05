@@ -823,5 +823,164 @@ class TestMetricAwareTraceBugFixes:
         assert isinstance(trace_3, LorentzTensor), f"Expected LorentzTensor, got {type(trace_3)}"
 
 
+class TestNormalizationPhysicsBugFixes:
+    """Test fixes for normalization constraint physics bugs"""
+
+    def setup_method(self):
+        """Set up test vectors and metric"""
+        self.metric = Metric()
+
+    def test_causal_character_classification(self):
+        """Test causal character determination for different vector types"""
+        # Timelike vector (four-velocity in rest frame)
+        timelike_components = np.array([1.0, 0.0, 0.0, 0.0])
+        indices = IndexStructure(["mu"], ["contravariant"], ["none"])
+        timelike_vector = LorentzTensor(timelike_components, indices, self.metric)
+
+        assert timelike_vector.causal_character() == "timelike"
+
+        # Spacelike vector
+        spacelike_components = np.array([0.0, 1.0, 0.0, 0.0])
+        spacelike_vector = LorentzTensor(spacelike_components, indices, self.metric)
+
+        assert spacelike_vector.causal_character() == "spacelike"
+
+        # Null vector (light-like)
+        null_components = np.array([1.0, 1.0, 0.0, 0.0])  # dt = dx
+        null_vector = LorentzTensor(null_components, indices, self.metric)
+
+        assert null_vector.causal_character() == "null"
+
+        # Zero vector
+        zero_components = np.array([0.0, 0.0, 0.0, 0.0])
+        zero_vector = LorentzTensor(zero_components, indices, self.metric)
+
+        assert zero_vector.causal_character() == "zero"
+
+    def test_same_sign_normalization_works(self):
+        """Test that normalization works when current and target have same sign"""
+        indices = IndexStructure(["mu"], ["contravariant"], ["none"])
+
+        # Timelike vector with wrong magnitude
+        unnormalized_timelike = np.array([2.0, 0.0, 0.0, 0.0])  # norm = -4
+        vector = LorentzTensor(unnormalized_timelike, indices, self.metric)
+
+        # Should be able to normalize to different timelike norm
+        normalized, _ = vector.enforce_normalization_constraint(target_norm=-1.0)
+
+        # Check normalization worked
+        u_lower = normalized.lower_index(0)
+        actual_norm = np.sum(normalized.components * u_lower.components)
+        assert abs(actual_norm - (-1.0)) < 1e-12
+
+        # Should still be timelike
+        assert normalized.causal_character() == "timelike"
+
+    def test_sign_change_normalization_raises_error(self):
+        """Test that trying to change causal character raises physics error"""
+        indices = IndexStructure(["mu"], ["contravariant"], ["none"])
+
+        # Start with timelike vector
+        timelike_components = np.array([1.0, 0.0, 0.0, 0.0])  # norm = -1
+        timelike_vector = LorentzTensor(timelike_components, indices, self.metric)
+
+        # Try to normalize to spacelike target - should fail
+        with pytest.raises(
+            ValueError, match="Cannot normalize timelike vector.*to spacelike target"
+        ):
+            timelike_vector.enforce_normalization_constraint(target_norm=+1.0)
+
+        # Start with spacelike vector
+        spacelike_components = np.array([0.0, 1.0, 0.0, 0.0])  # norm = +1
+        spacelike_vector = LorentzTensor(spacelike_components, indices, self.metric)
+
+        # Try to normalize to timelike target - should fail
+        with pytest.raises(
+            ValueError, match="Cannot normalize spacelike vector.*to timelike target"
+        ):
+            spacelike_vector.enforce_normalization_constraint(target_norm=-1.0)
+
+    def test_from_spatial_velocity_construction(self):
+        """Test physics-correct four-velocity construction from spatial velocity"""
+        # Test rest frame
+        v_rest = np.array([0.0, 0.0, 0.0])
+        u_rest = LorentzTensor.from_spatial_velocity(v_rest, self.metric, c=1.0)
+
+        # Should be u^μ = (1, 0, 0, 0) in natural units
+        expected = np.array([1.0, 0.0, 0.0, 0.0])
+        assert_allclose(u_rest.components, expected, rtol=1e-12)
+
+        # Check normalization: u^μ u_μ = -1
+        u_lower = u_rest.lower_index(0)
+        norm = np.sum(u_rest.components * u_lower.components)
+        assert abs(norm - (-1.0)) < 1e-12
+
+        # Test moving frame
+        v_moving = np.array([0.6, 0.0, 0.0])  # 0.6c in x direction
+        u_moving = LorentzTensor.from_spatial_velocity(v_moving, self.metric, c=1.0)
+
+        # γ = 1/√(1-0.36) = 1/0.8 = 1.25
+        gamma = 1.25
+        expected_moving = np.array([gamma, gamma * 0.6, 0.0, 0.0])
+        assert_allclose(u_moving.components, expected_moving, rtol=1e-12)
+
+        # Check normalization
+        u_lower_moving = u_moving.lower_index(0)
+        norm_moving = np.sum(u_moving.components * u_lower_moving.components)
+        assert abs(norm_moving - (-1.0)) < 1e-12
+
+    def test_superluminal_velocity_rejected(self):
+        """Test that superluminal velocities are properly rejected"""
+        # Attempt v = 1.1c - should fail
+        v_superluminal = np.array([1.1, 0.0, 0.0])
+
+        with pytest.raises(ValueError, match="exceeds speed of light"):
+            LorentzTensor.from_spatial_velocity(v_superluminal, self.metric, c=1.0)
+
+        # Exactly c should also fail
+        v_lightspeed = np.array([1.0, 0.0, 0.0])
+
+        with pytest.raises(ValueError, match="exceeds speed of light"):
+            LorentzTensor.from_spatial_velocity(v_lightspeed, self.metric, c=1.0)
+
+    def test_normalization_error_message_physics(self):
+        """Test that error messages explain the physics correctly"""
+        indices = IndexStructure(["mu"], ["contravariant"], ["none"])
+        timelike_vector = LorentzTensor(np.array([1.0, 0.0, 0.0, 0.0]), indices, self.metric)
+
+        try:
+            timelike_vector.enforce_normalization_constraint(target_norm=+1.0)
+            raise AssertionError("Should have raised ValueError")
+        except ValueError as e:
+            error_msg = str(e)
+            # Check that error explains the physics
+            assert "timelike" in error_msg
+            assert "spacelike" in error_msg
+            assert "invariant under real scaling" in error_msg
+            assert "from_spatial_velocity" in error_msg
+
+    def test_relativistic_physics_consistency(self):
+        """Test that all operations maintain relativistic physics consistency"""
+        # Create boosted four-velocity using proper construction
+        v_boost = np.array([0.5, 0.3, 0.0])
+        u_boosted = LorentzTensor.from_spatial_velocity(v_boost, self.metric, c=1.0)
+
+        # Should be timelike with correct normalization
+        assert u_boosted.causal_character() == "timelike"
+
+        u_lower = u_boosted.lower_index(0)
+        norm = np.sum(u_boosted.components * u_lower.components)
+        assert abs(norm - (-1.0)) < 1e-12
+
+        # Should satisfy energy-momentum relation
+        E = u_boosted.components[0]  # γc in natural units
+        p_vec = u_boosted.components[1:4]  # γv⃗
+
+        # E² - |p|² = m²c⁴, with m=1, c=1: E² - |p|² = 1
+        p_squared = np.sum(p_vec**2)
+        mass_shell = E**2 - p_squared
+        assert abs(mass_shell - 1.0) < 1e-12
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

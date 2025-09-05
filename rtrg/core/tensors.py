@@ -630,13 +630,24 @@ class LorentzTensor:
         u_lower = self.lower_index(0)
         current_norm = np.sum(self.components * u_lower.components)
 
-        # Calculate normalization factor
+        # Physics validation: Check if normalization is possible
         if abs(current_norm) < 1e-14:
             raise ValueError("Cannot normalize zero vector")
 
+        # Check sign compatibility - fundamental physics constraint
+        if current_norm * target_norm < 0:
+            # Impossible: cannot change causal character by scalar multiplication
+            current_type = "timelike" if current_norm < 0 else "spacelike"
+            target_type = "timelike" if target_norm < 0 else "spacelike"
+            raise ValueError(
+                f"Cannot normalize {current_type} vector (norm={current_norm:.6g}) "
+                f"to {target_type} target (norm={target_norm:.6g}). "
+                f"The sign of u^μ u_μ is invariant under real scaling. "
+                f"For four-velocity, use from_spatial_velocity() instead."
+            )
+
+        # Valid normalization: same causal type
         norm_factor = np.sqrt(abs(target_norm / current_norm))
-        if current_norm * target_norm < 0:  # Different signs
-            norm_factor *= -1
 
         # Normalize components
         normalized_components = norm_factor * self.components
@@ -647,6 +658,85 @@ class LorentzTensor:
         lagrange_multiplier = (current_norm - target_norm) / 2.0
 
         return normalized_tensor, float(lagrange_multiplier.real)
+
+    def causal_character(self) -> str:
+        """
+        Determine the causal character of a four-vector.
+
+        Returns:
+            "timelike" if u^μ u_μ < 0 (massive particles)
+            "spacelike" if u^μ u_μ > 0 (spatial separations)
+            "null" if u^μ u_μ = 0 (light-like)
+            "zero" if u^μ = 0
+        """
+        if self.rank != 1:
+            raise ValueError("Causal character only defined for vectors")
+
+        u_lower = self.lower_index(0)
+        norm = np.sum(self.components * u_lower.components)
+
+        # Handle complex results by taking real part for physical norm
+        norm_real = float(np.real(norm))
+
+        # Check for true zero vector (all components zero)
+        if np.allclose(self.components, 0, atol=1e-14):
+            return "zero"
+
+        # Classify based on norm value with appropriate tolerance
+        if abs(norm_real) < 1e-12:  # Null/light-like
+            return "null"
+        elif norm_real < 0:
+            return "timelike"
+        else:
+            return "spacelike"
+
+    @classmethod
+    def from_spatial_velocity(
+        cls, spatial_velocity: np.ndarray, metric: "Metric", c: float = 1.0
+    ) -> "LorentzTensor":
+        """
+        Construct normalized four-velocity from spatial 3-velocity.
+
+        This is the physics-correct way to build a timelike four-velocity
+        that automatically satisfies u^μ u_μ = -c².
+
+        Args:
+            spatial_velocity: 3D spatial velocity vector [vx, vy, vz]
+            metric: Spacetime metric
+            c: Speed of light (default: 1.0 in natural units)
+
+        Returns:
+            Properly normalized four-velocity u^μ = γ(c, v⃗)
+
+        Raises:
+            ValueError: If |v| >= c (superluminal velocity)
+        """
+        from .constants import PhysicalConstants
+
+        if len(spatial_velocity) != 3:
+            raise ValueError("Spatial velocity must be 3-dimensional")
+
+        v_squared = np.sum(spatial_velocity**2)
+        beta_squared = v_squared / (c**2)
+
+        if beta_squared >= 1.0:
+            raise ValueError(
+                f"Spatial velocity magnitude |v|={np.sqrt(v_squared):.6g} "
+                f"exceeds speed of light c={c}. Superluminal velocities forbidden."
+            )
+
+        # Lorentz factor: γ = 1/√(1 - v²/c²)
+        gamma = 1.0 / np.sqrt(1.0 - beta_squared)
+
+        # Four-velocity: u^μ = γ(c, v⃗)
+        four_velocity = np.zeros(4)
+        four_velocity[0] = gamma * c  # Time component
+        four_velocity[1:4] = gamma * spatial_velocity  # Spatial components
+
+        # Create tensor with contravariant indices
+        indices = IndexStructure(["mu"], ["contravariant"], ["none"])
+
+        return cls(four_velocity, indices, metric)
 
     def enforce_traceless_constraint(self) -> "LorentzTensor":
         """
