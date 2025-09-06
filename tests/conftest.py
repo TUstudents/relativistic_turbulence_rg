@@ -7,8 +7,9 @@ from collections.abc import Generator
 import numpy as np
 import pytest
 
-from rtrg.core import FieldRegistry, ISParameters, Metric
+from rtrg.core import ISParameters, Metric
 from rtrg.core.constants import PhysicalConstants
+from rtrg.core.registry_factory import create_registry_for_context
 
 
 @pytest.fixture
@@ -26,10 +27,9 @@ def is_parameters() -> ISParameters:
 
 
 @pytest.fixture
-def field_registry(metric: Metric) -> FieldRegistry:
+def field_registry(metric: Metric):
     """Field registry with all IS fields"""
-    registry = FieldRegistry()
-    registry.create_is_fields(metric)
+    registry = create_registry_for_context("basic_physics", metric=metric)
     return registry
 
 

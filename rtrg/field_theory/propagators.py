@@ -42,7 +42,6 @@ import sympy as sp
 from sympy import I, Matrix, pi, simplify, solve, symbols
 
 from ..core.fields import EnhancedFieldRegistry, Field, TensorAwareField
-from ..core.registry_factory import create_registry_for_context
 from ..core.tensors import (
     ConstrainedTensorField,
     IndexType,
@@ -3263,7 +3262,9 @@ class TensorAwarePropagatorCalculator(PropagatorCalculator):
 
         # Enhanced components
         self.projector = ProjectionOperators(metric)
-        self.enhanced_registry = create_registry_for_context("tensor_operations", metric=metric)
+        from ..core.registry_factory import create_auto_registry
+
+        self.enhanced_registry = create_auto_registry(metric=metric)
 
         # Default background four-velocity (rest frame)
         self.background_velocity = np.array([1.0, 0.0, 0.0, 0.0])

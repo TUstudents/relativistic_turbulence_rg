@@ -15,8 +15,9 @@ import pytest
 import sympy as sp
 from sympy import I, conjugate, expand, pi, simplify, symbols
 
-from rtrg.core.fields import Field, FieldRegistry
+from rtrg.core.fields import Field
 from rtrg.core.parameters import ISParameters
+from rtrg.core.registry_factory import create_registry_for_context
 from rtrg.core.tensors import Metric
 from rtrg.field_theory.msrjd_action import MSRJDAction
 from rtrg.field_theory.propagators import (
@@ -38,11 +39,7 @@ def metric():
 @pytest.fixture
 def field_registry():
     """Create field registry with IS fields for testing."""
-    registry = FieldRegistry()
-
-    # Create all Israel-Stewart fields
-    registry.create_is_fields()
-
+    registry = create_registry_for_context("basic_physics")
     return registry
 
 

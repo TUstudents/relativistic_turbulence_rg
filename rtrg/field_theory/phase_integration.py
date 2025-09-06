@@ -48,6 +48,7 @@ from ..core.fields import (
     FieldProperties,
     TensorAwareField,
 )
+from ..core.registry_factory import RegistryFactory, create_registry_for_context
 
 # Phase 1 imports
 from ..core.tensors import (
@@ -157,6 +158,9 @@ class PhaseIntegrator:
         # Performance tracking
         self._performance_log: dict[str, float] = {}
 
+        # Registry factory for context-aware creation
+        self._registry_factory = RegistryFactory()
+
     def convert_phase1_to_symbolic(
         self, phase1_registry: EnhancedFieldRegistry
     ) -> IndexedFieldRegistry:
@@ -173,8 +177,16 @@ class PhaseIntegrator:
         if cache_key in self._conversion_cache and self.config.use_symbolic_cache:
             return self._conversion_cache[cache_key]  # type: ignore[no-any-return]
 
-        # Create new symbolic registry
-        symbolic_registry = IndexedFieldRegistry()
+        # Create new symbolic registry (auto-detects "symbolic" from method name)
+        symbolic_registry_base = self._registry_factory.create_for_operation(
+            "convert_phase1_to_symbolic", coordinates=self.coordinates
+        )
+        # Cast to IndexedFieldRegistry for type safety
+        from .symbolic_tensors import IndexedFieldRegistry
+
+        if not isinstance(symbolic_registry_base, IndexedFieldRegistry):
+            raise TypeError(f"Expected IndexedFieldRegistry, got {type(symbolic_registry_base)}")
+        symbolic_registry: IndexedFieldRegistry = symbolic_registry_base
 
         # Convert each field
         for field_name in ["rho", "u", "pi", "Pi", "q"]:
@@ -185,11 +197,13 @@ class PhaseIntegrator:
                 symbolic_field = self._convert_tensor_aware_to_symbolic(field_name, phase1_field)
                 symbolic_registry.register_field(field_name, symbolic_field)
 
-                # Create antifield
-                symbolic_registry.create_antifield(field_name)
+                # Create antifield if method exists
+                if hasattr(symbolic_registry, "create_antifield"):
+                    symbolic_registry.create_antifield(field_name)
 
                 # Transfer constraints
                 if self.config.preserve_constraints:
+                    # Cast is safe since we validated the type above
                     self._transfer_field_constraints(phase1_field, symbolic_registry, field_name)
 
         # Cache result
@@ -295,14 +309,23 @@ class PhaseIntegrator:
         if metric is None:
             metric = Metric()  # Default Minkowski metric
 
-        # Create enhanced registry
-        enhanced_registry = EnhancedFieldRegistry()
-        enhanced_registry.create_enhanced_is_fields(metric)
+        # Create enhanced registry (auto-detects tensor operations context)
+        enhanced_registry_base = self._registry_factory.create_for_operation(
+            "convert_symbolic_to_phase1", metric=metric
+        )
+        # Cast to EnhancedFieldRegistry for type safety
+        if not isinstance(enhanced_registry_base, EnhancedFieldRegistry):
+            raise TypeError(f"Expected EnhancedFieldRegistry, got {type(enhanced_registry_base)}")
+        enhanced_registry: EnhancedFieldRegistry = enhanced_registry_base
 
         # Transfer constraint information back
         for field_name in ["rho", "u", "pi", "Pi", "q"]:
             symbolic_field = symbolic_registry.get_field(field_name)
-            enhanced_field = enhanced_registry.get_tensor_aware_field(field_name)
+            enhanced_field = (
+                enhanced_registry.get_tensor_aware_field(field_name)
+                if hasattr(enhanced_registry, "get_tensor_aware_field")
+                else enhanced_registry.get_field(field_name)
+            )
 
             if symbolic_field and enhanced_field:
                 # Transfer constraints
@@ -355,8 +378,9 @@ class PhaseIntegrator:
                 results.phase1_registry = is_system.field_registry
             else:
                 # Create enhanced registry
-                enhanced_registry = EnhancedFieldRegistry()
-                enhanced_registry.create_enhanced_is_fields(is_system.metric)
+                enhanced_registry = create_registry_for_context(
+                    "tensor_operations", metric=is_system.metric
+                )
                 results.phase1_registry = enhanced_registry
 
             # Step 2: Convert to Phase 2 symbolic system
@@ -587,13 +611,21 @@ class PhaseIntegrator:
         if comp_type == "constraints":
             # Use Phase 1 constraint system
             if results.phase1_registry is None:
-                enhanced_registry = EnhancedFieldRegistry()
-                enhanced_registry.create_enhanced_is_fields(is_system.metric)
+                # Auto-detect context from constraint-related keywords
+                context = self._registry_factory.get_recommended_context(
+                    keywords=["constraints", "tensor_operations"]
+                )
+                enhanced_registry = self._registry_factory.create_for_context(
+                    context, metric=is_system.metric
+                )
                 results.phase1_registry = enhanced_registry
 
             # Apply and validate constraints
             dummy_components = {"u": np.array([1, 0, 0, 0])}
-            constrained = results.phase1_registry.apply_all_constraints(dummy_components)
+            if results.phase1_registry is not None and hasattr(
+                results.phase1_registry, "apply_all_constraints"
+            ):
+                constrained = results.phase1_registry.apply_all_constraints(dummy_components)
             results.consistency_checks["phase1_constraints_applied"] = True
 
     def _run_phase2_computation(
@@ -604,11 +636,17 @@ class PhaseIntegrator:
             # Use Phase 2 for vertex extraction
             if results.phase2_registry is None:
                 if results.phase1_registry is None:
-                    enhanced_registry = EnhancedFieldRegistry()
-                    enhanced_registry.create_enhanced_is_fields(is_system.metric)
+                    enhanced_registry = create_registry_for_context(
+                        "tensor_operations", metric=is_system.metric
+                    )
                     results.phase1_registry = enhanced_registry
 
-                results.phase2_registry = self.convert_phase1_to_symbolic(results.phase1_registry)
+                if results.phase1_registry is not None:
+                    results.phase2_registry = self.convert_phase1_to_symbolic(
+                        results.phase1_registry
+                    )
+                else:
+                    raise RuntimeError("Phase1 registry is None, cannot convert to symbolic")
 
             # Extract vertices using symbolic system
             tensor_action = TensorMSRJDAction(is_system, use_enhanced_registry=False)
@@ -624,11 +662,17 @@ class PhaseIntegrator:
             # Use Phase 2 for propagator extraction
             if results.phase2_registry is None:
                 if results.phase1_registry is None:
-                    enhanced_registry = EnhancedFieldRegistry()
-                    enhanced_registry.create_enhanced_is_fields(is_system.metric)
+                    enhanced_registry = create_registry_for_context(
+                        "tensor_operations", metric=is_system.metric
+                    )
                     results.phase1_registry = enhanced_registry
 
-                results.phase2_registry = self.convert_phase1_to_symbolic(results.phase1_registry)
+                if results.phase1_registry is not None:
+                    results.phase2_registry = self.convert_phase1_to_symbolic(
+                        results.phase1_registry
+                    )
+                else:
+                    raise RuntimeError("Phase1 registry is None, cannot convert to symbolic")
 
             tensor_action = TensorMSRJDAction(is_system, use_enhanced_registry=False)
             tensor_action.field_registry = results.phase2_registry

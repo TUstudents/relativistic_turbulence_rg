@@ -26,7 +26,8 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 
-from ..core.fields import FieldRegistry
+from ..core.registry_base import AbstractFieldRegistry
+from ..core.registry_factory import create_registry_for_context
 from ..core.tensors import LorentzTensor
 
 
@@ -535,7 +536,9 @@ def plot_tensor_operation(
 
 
 def plot_field_hierarchy(
-    registry: FieldRegistry, figsize: tuple[int, int] = (14, 10), save_path: str | None = None
+    registry: AbstractFieldRegistry,
+    figsize: tuple[int, int] = (14, 10),
+    save_path: str | None = None,
 ) -> plt.Figure:
     """
     Visualize the hierarchical relationships between fields in the theory.
@@ -545,7 +548,7 @@ def plot_field_hierarchy(
     and constraint information.
 
     Args:
-        registry: FieldRegistry containing all fields to visualize
+        registry: Field registry containing all fields to visualize
         figsize: Figure size for matplotlib plot
         save_path: Optional path to save the figure
 
@@ -553,8 +556,7 @@ def plot_field_hierarchy(
         Matplotlib figure object
 
     Examples:
-        >>> registry = FieldRegistry()
-        >>> registry.create_is_fields()
+        >>> registry = create_registry_for_context("basic_physics")
         >>> fig = plot_field_hierarchy(registry)
         >>> plt.show()
     """
@@ -565,9 +567,13 @@ def plot_field_hierarchy(
 
     # Add nodes for physical fields and their properties
     field_positions = {}
-    y_positions = np.linspace(0.8, 0.2, len(registry.fields))
+    field_names = registry.list_field_names()
+    y_positions = np.linspace(0.8, 0.2, len(field_names))
 
-    for i, (name, field) in enumerate(registry.fields.items()):
+    for i, name in enumerate(field_names):
+        field = registry.get_field(name)
+        if field is None:
+            continue
         # Physical field position
         x_phys = 0.2
         y_pos = y_positions[i]

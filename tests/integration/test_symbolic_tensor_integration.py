@@ -23,9 +23,9 @@ import sympy as sp
 from sympy import symbols
 
 from rtrg.core.constants import PhysicalConstants
+from rtrg.core.registry_factory import create_registry_for_context
 from rtrg.core.tensors import Metric, TensorIndex, TensorIndexStructure
 from rtrg.field_theory.symbolic_tensors import (
-    IndexedFieldRegistry,
     SymbolicTensorField,
 )
 
@@ -185,8 +185,8 @@ class TestSymbolicTensorWithTensorInfrastructure:
         return [sp.Symbol(name, real=True) for name in ["t", "x", "y", "z"]]
 
     @pytest.fixture
-    def registry(self):
-        return IndexedFieldRegistry()
+    def registry(self, coordinates):
+        return create_registry_for_context("symbolic_msrjd", coordinates=coordinates)
 
     def test_registry_integration(self, registry, coordinates):
         """Test IndexedFieldRegistry integration with fixed create_component."""

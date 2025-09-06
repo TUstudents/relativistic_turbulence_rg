@@ -25,7 +25,6 @@ import sympy as sp
 from sympy import DiracDelta, Function, IndexedBase, symbols
 
 from rtrg.core.constants import PhysicalConstants
-from rtrg.core.fields import FieldRegistry
 from rtrg.core.tensors import Metric
 from rtrg.field_theory.msrjd_action import (
     ActionComponents,

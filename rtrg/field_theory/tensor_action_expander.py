@@ -59,7 +59,7 @@ from sympy import (
     symbols,
 )
 
-from .symbolic_tensors import IndexedFieldRegistry, SymbolicTensorField, TensorDerivative
+from .symbolic_tensors import SymbolicTensorField, TensorDerivative
 from .tensor_msrjd_action import TensorActionComponents, TensorMSRJDAction
 
 

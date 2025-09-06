@@ -11,12 +11,12 @@ import sympy as sp
 
 from rtrg.core.fields import (
     EnhancedEnergyDensityField,
-    EnhancedFieldRegistry,
     EnhancedFourVelocityField,
     EnhancedShearStressField,
     FieldProperties,
     TensorAwareField,
 )
+from rtrg.core.registry_factory import create_registry_for_context
 from rtrg.core.tensors import (
     ConstrainedTensorField,
     IndexType,
@@ -346,7 +346,7 @@ class TestEnhancedFieldRegistry:
     @pytest.fixture
     def registry(self):
         """Create enhanced field registry."""
-        return EnhancedFieldRegistry()
+        return create_registry_for_context("tensor_operations")
 
     @pytest.fixture
     def metric(self):
@@ -416,10 +416,7 @@ class TestTensorAwarePropagatorCalculator:
                     equilibrium_pressure=0.33,
                 )
 
-                from rtrg.core.fields import FieldRegistry
-
-                self.field_registry = FieldRegistry()
-                self.field_registry.create_is_fields(metric)
+                self.field_registry = create_registry_for_context("basic_physics", metric=metric)
 
         class MockMSRJDAction:
             def __init__(self):
@@ -471,8 +468,7 @@ def test_phase1_integration():
     """Integration test for Phase 1 tensor infrastructure."""
     # Create basic components
     metric = Metric()
-    registry = EnhancedFieldRegistry()
-    registry.create_enhanced_is_fields(metric)
+    registry = create_registry_for_context("tensor_operations", metric=metric)
 
     # Test field creation
     assert len(registry) >= 5

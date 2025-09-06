@@ -35,7 +35,8 @@ import pytest
 import sympy as sp
 from sympy import I, diff, expand, pi, simplify, symbols
 
-from rtrg.core.fields import EnhancedFieldRegistry, FieldProperties, TensorAwareField
+from rtrg.core.fields import FieldProperties, TensorAwareField
+from rtrg.core.registry_factory import create_registry_for_context
 
 # Import Phase 1 components
 from rtrg.core.tensors import IndexType, Metric, TensorIndex, TensorIndexStructure
@@ -227,7 +228,7 @@ class TestIndexedFieldRegistry:
     def setup_method(self):
         """Set up registry test fixtures."""
         self.coordinates = symbols("t x y z", real=True)
-        self.registry = IndexedFieldRegistry()
+        self.registry = create_registry_for_context("symbolic_msrjd", coordinates=self.coordinates)
 
     def test_field_registration(self):
         """Test field registration and retrieval."""
@@ -529,8 +530,9 @@ class TestPhaseIntegration:
         self.is_system = IsraelStewartSystem(self.parameters)
 
         # Create Phase 1 enhanced registry
-        self.enhanced_registry = EnhancedFieldRegistry()
-        self.enhanced_registry.create_enhanced_is_fields(self.is_system.metric)
+        self.enhanced_registry = create_registry_for_context(
+            "tensor_operations", metric=self.is_system.metric
+        )
 
         self.integrator = PhaseIntegrator()
 
