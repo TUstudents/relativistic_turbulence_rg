@@ -1,33 +1,28 @@
 """
 Registry Factory for Context-Aware Field Registry Selection.
 
-This module provides a factory system for automatically selecting and creating
-the appropriate field registry type based on the physics context, eliminating
-manual registry instantiation and conversion throughout the codebase.
+This module provides a factory system for creating the appropriate field registry
+type based on explicit physics context, eliminating manual registry instantiation
+and conversion throughout the codebase.
 
 Factory Patterns:
     RegistryFactory.create_for_context(context) -> Appropriate registry type
-    RegistryFactory.auto_detect_context(module, operation) -> Context string
 
 Supported Contexts:
     - "basic_physics": Core FieldRegistry for simple IS calculations
     - "tensor_operations": EnhancedFieldRegistry for advanced tensor algebra
     - "symbolic_msrjd": IndexedFieldRegistry for symbolic field theory
-    - "auto": Automatic context detection based on usage patterns
 
 Usage:
     >>> factory = RegistryFactory()
     >>> registry = factory.create_for_context("tensor_operations", metric=metric)
-    >>> registry = factory.create_for_module("propagators")  # Auto-detects context
+    >>> registry = create_registry_for_context("basic_physics", metric=metric)
 """
 
-import inspect
-import warnings
 from enum import Enum
 from typing import Any, Optional, Union, cast
 
 import sympy as sp
-from sympy import Symbol
 
 from ..field_theory.symbolic_tensors import IndexedFieldRegistry, SymbolicTensorField
 from .fields import EnhancedFieldRegistry, Field, FieldRegistry
@@ -42,97 +37,17 @@ class RegistryContext(Enum):
     BASIC_PHYSICS = "basic_physics"
     TENSOR_OPERATIONS = "tensor_operations"
     SYMBOLIC_MSRJD = "symbolic_msrjd"
-    AUTO = "auto"
-
-
-class ContextDetector:
-    """Automatic context detection based on module usage patterns."""
-
-    def __init__(self) -> None:
-        """Initialize context detector with pattern rules."""
-        self._module_patterns = {
-            # Basic physics patterns
-            "basic_physics": {
-                "modules": ["israel_stewart.equations", "core.fields"],
-                "operations": ["create_is_fields", "register_field", "get_field"],
-                "keywords": ["IsraelStewartSystem", "basic", "simple"],
-            },
-            # Tensor operations patterns
-            "tensor_operations": {
-                "modules": ["field_theory.propagators", "core.tensors"],
-                "operations": ["construct_tensor_aware_propagator_matrix", "validate_constraints"],
-                "keywords": ["TensorAware", "Enhanced", "constraint", "projector"],
-            },
-            # Symbolic MSRJD patterns
-            "symbolic_msrjd": {
-                "modules": ["field_theory.tensor_msrjd_action", "field_theory.symbolic_tensors"],
-                "operations": [
-                    "construct_action",
-                    "create_antifield",
-                    "generate_field_action_pairs",
-                ],
-                "keywords": ["symbolic", "MSRJD", "action", "antifield", "SymbolicTensorField"],
-            },
-        }
-
-    def detect_from_module_name(self, module_name: str) -> str:
-        """Detect context from module name."""
-        for context, patterns in self._module_patterns.items():
-            for module_pattern in patterns["modules"]:
-                if module_pattern in module_name:
-                    return context
-        return "basic_physics"  # Default fallback
-
-    def detect_from_operation(self, operation_name: str) -> str:
-        """Detect context from operation name."""
-        for context, patterns in self._module_patterns.items():
-            for op_pattern in patterns["operations"]:
-                if op_pattern in operation_name:
-                    return context
-        return "basic_physics"  # Default fallback
-
-    def detect_from_keywords(self, keywords: list[str]) -> str:
-        """Detect context from a list of keywords."""
-        context_scores: dict[str, int] = {
-            "basic_physics": 0,
-            "tensor_operations": 0,
-            "symbolic_msrjd": 0,
-        }
-
-        for keyword in keywords:
-            for context, patterns in self._module_patterns.items():
-                for pattern_keyword in patterns["keywords"]:
-                    if pattern_keyword.lower() in keyword.lower():
-                        context_scores[context] += 1
-
-        # Return context with highest score
-        best_context = max(context_scores.items(), key=lambda x: x[1])
-        return best_context[0] if best_context[1] > 0 else "basic_physics"
-
-    def detect_from_caller_stack(self) -> str:
-        """Detect context from calling stack analysis."""
-        stack = inspect.stack()
-
-        # Look at calling module names
-        for frame_info in stack[2:6]:  # Skip factory frames, look at callers
-            filename = frame_info.filename
-            if "rtrg" in filename:
-                # Extract module path from filename
-                module_parts = filename.split("rtrg")[-1].replace("/", ".").replace(".py", "")
-                return self.detect_from_module_name(module_parts)
-
-        return "basic_physics"  # Default fallback
 
 
 class RegistryFactory:
     """
     Factory for creating context-appropriate field registries.
 
-    Automatically selects the best registry type based on physics context,
-    eliminating manual registry selection and conversion throughout the codebase.
+    Provides explicit context-based registry selection, eliminating manual
+    registry instantiation and conversion throughout the codebase.
 
     Features:
-    - Context-aware registry selection
+    - Explicit context-aware registry selection
     - Automatic parameter setup (metrics, coordinates)
     - Registry conversion when needed
     - Performance optimization through caching
@@ -140,14 +55,12 @@ class RegistryFactory:
     """
 
     def __init__(self) -> None:
-        """Initialize factory with context detector and converter."""
-        self.context_detector = ContextDetector()
+        """Initialize factory with registry converter."""
         self.converter = FieldRegistryConverter()
         self._creation_stats: dict[str, int] = {
             "basic_physics": 0,
             "tensor_operations": 0,
             "symbolic_msrjd": 0,
-            "auto_detected": 0,
         }
         self._registry_cache: dict[str, Any] = {}
 
@@ -158,7 +71,7 @@ class RegistryFactory:
         Create registry for specific context.
 
         Args:
-            context: Registry context ("basic_physics", "tensor_operations", "symbolic_msrjd", "auto")
+            context: Registry context ("basic_physics", "tensor_operations", "symbolic_msrjd")
             **kwargs: Context-specific parameters
                 - metric: Metric tensor (for enhanced/symbolic)
                 - coordinates: Spacetime coordinates (for symbolic)
@@ -172,9 +85,10 @@ class RegistryFactory:
         if isinstance(context, RegistryContext):
             context = context.value
 
-        if context == "auto":
-            context = self.context_detector.detect_from_caller_stack()
-            self._creation_stats["auto_detected"] += 1
+        if context not in ["basic_physics", "tensor_operations", "symbolic_msrjd"]:
+            raise ValueError(
+                f"Invalid registry context: {context}. Must be one of: basic_physics, tensor_operations, symbolic_msrjd"
+            )
 
         self._creation_stats[context] += 1
 
@@ -223,48 +137,6 @@ class RegistryFactory:
 
         else:
             raise ValueError(f"Unknown registry context: {context}")
-
-    def create_for_module(self, module_name: str, **kwargs: Any) -> AbstractFieldRegistry[Any]:
-        """
-        Create registry based on module usage context.
-
-        Args:
-            module_name: Name of the calling module
-            **kwargs: Additional parameters for registry creation
-
-        Returns:
-            Appropriate registry for the module's needs
-        """
-        context = self.context_detector.detect_from_module_name(module_name)
-        return self.create_for_context(context, **kwargs)
-
-    def create_for_operation(
-        self, operation_name: str, **kwargs: Any
-    ) -> AbstractFieldRegistry[Any]:
-        """
-        Create registry based on operation context.
-
-        Args:
-            operation_name: Name of the operation being performed
-            **kwargs: Additional parameters for registry creation
-
-        Returns:
-            Appropriate registry for the operation's needs
-        """
-        context = self.context_detector.detect_from_operation(operation_name)
-        return self.create_for_context(context, **kwargs)
-
-    def create_auto(self, **kwargs: Any) -> AbstractFieldRegistry[Any]:
-        """
-        Automatically create registry based on calling context.
-
-        Args:
-            **kwargs: Parameters for registry creation
-
-        Returns:
-            Registry automatically selected based on usage context
-        """
-        return self.create_for_context("auto", **kwargs)
 
     def convert_registry(
         self,
@@ -323,28 +195,6 @@ class RegistryFactory:
         # If no conversion needed, return as-is
         return source_registry
 
-    def get_recommended_context(self, **hints: Any) -> str:
-        """
-        Get recommended registry context based on usage hints.
-
-        Args:
-            **hints: Usage hints
-                - module: Module name
-                - operation: Operation name
-                - keywords: List of relevant keywords
-
-        Returns:
-            Recommended context string
-        """
-        if "module" in hints:
-            return self.context_detector.detect_from_module_name(hints["module"])
-        if "operation" in hints:
-            return self.context_detector.detect_from_operation(hints["operation"])
-        if "keywords" in hints:
-            return self.context_detector.detect_from_keywords(hints["keywords"])
-
-        return self.context_detector.detect_from_caller_stack()
-
     def get_creation_stats(self) -> dict[str, int]:
         """Get registry creation statistics."""
         return self._creation_stats.copy()
@@ -375,11 +225,6 @@ def create_registry_for_context(
 ) -> AbstractFieldRegistry[Any]:
     """Create registry using global factory."""
     return _global_factory.create_for_context(context, **kwargs)
-
-
-def create_auto_registry(**kwargs: Any) -> AbstractFieldRegistry[Any]:
-    """Automatically create registry based on context."""
-    return _global_factory.create_auto(**kwargs)
 
 
 def get_registry_factory() -> RegistryFactory:

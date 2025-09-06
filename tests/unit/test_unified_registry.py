@@ -25,10 +25,8 @@ from rtrg.core.registry_converter import (
     convert_symbolic_to_enhanced,
 )
 from rtrg.core.registry_factory import (
-    ContextDetector,
     RegistryContext,
     RegistryFactory,
-    create_auto_registry,
     create_registry_for_context,
     get_registry_factory,
 )
@@ -298,65 +296,6 @@ class TestRegistryFactory:
 
         # Should be same cached instance
         assert registry1 is registry2
-
-    def test_context_detector_module_patterns(self):
-        """Test context detector identifies contexts from module names."""
-        detector = ContextDetector()
-
-        # Test module pattern detection
-        assert detector.detect_from_module_name("israel_stewart.equations") == "basic_physics"
-        assert detector.detect_from_module_name("field_theory.propagators") == "tensor_operations"
-        assert (
-            detector.detect_from_module_name("field_theory.tensor_msrjd_action") == "symbolic_msrjd"
-        )
-
-    def test_context_detector_operation_patterns(self):
-        """Test context detector identifies contexts from operation names."""
-        detector = ContextDetector()
-
-        # Test operation pattern detection
-        assert detector.detect_from_operation("create_is_fields") == "basic_physics"
-        assert (
-            detector.detect_from_operation("construct_tensor_aware_propagator_matrix")
-            == "tensor_operations"
-        )
-        assert detector.detect_from_operation("generate_field_action_pairs") == "symbolic_msrjd"
-
-    def test_context_detector_keyword_patterns(self):
-        """Test context detector identifies contexts from keywords."""
-        detector = ContextDetector()
-
-        # Test keyword pattern detection
-        assert detector.detect_from_keywords(["IsraelStewartSystem", "basic"]) == "basic_physics"
-        assert detector.detect_from_keywords(["TensorAware", "Enhanced"]) == "tensor_operations"
-        assert detector.detect_from_keywords(["symbolic", "MSRJD", "antifield"]) == "symbolic_msrjd"
-
-    def test_factory_module_context_creation(self, factory):
-        """Test factory creates registries based on module context."""
-        registry = factory.create_for_module("field_theory.propagators")
-        assert isinstance(registry, EnhancedFieldRegistry)
-
-        registry = factory.create_for_module("israel_stewart.equations")
-        assert isinstance(registry, FieldRegistry)
-
-    def test_factory_operation_context_creation(self, factory, coordinates):
-        """Test factory creates registries based on operation context."""
-        registry = factory.create_for_operation(
-            "generate_field_action_pairs", coordinates=coordinates
-        )
-        assert isinstance(registry, IndexedFieldRegistry)
-
-        registry = factory.create_for_operation("validate_constraints")
-        assert isinstance(registry, EnhancedFieldRegistry)
-
-    def test_auto_registry_creation(self):
-        """Test automatic registry creation based on context."""
-        # This will use stack inspection to determine context
-        registry = create_auto_registry()
-
-        # Should create some valid registry type
-        assert isinstance(registry, AbstractFieldRegistry)
-        assert registry.field_count() > 0
 
     def test_global_factory_functions(self, metric, coordinates):
         """Test global factory convenience functions."""

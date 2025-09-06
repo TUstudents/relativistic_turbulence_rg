@@ -177,9 +177,9 @@ class PhaseIntegrator:
         if cache_key in self._conversion_cache and self.config.use_symbolic_cache:
             return self._conversion_cache[cache_key]  # type: ignore[no-any-return]
 
-        # Create new symbolic registry (auto-detects "symbolic" from method name)
-        symbolic_registry_base = self._registry_factory.create_for_operation(
-            "convert_phase1_to_symbolic", coordinates=self.coordinates
+        # Create new symbolic registry for MSRJD symbolic field theory
+        symbolic_registry_base = self._registry_factory.create_for_context(
+            "symbolic_msrjd", coordinates=self.coordinates
         )
         # Cast to IndexedFieldRegistry for type safety
         from .symbolic_tensors import IndexedFieldRegistry
@@ -309,9 +309,9 @@ class PhaseIntegrator:
         if metric is None:
             metric = Metric()  # Default Minkowski metric
 
-        # Create enhanced registry (auto-detects tensor operations context)
-        enhanced_registry_base = self._registry_factory.create_for_operation(
-            "convert_symbolic_to_phase1", metric=metric
+        # Create enhanced registry for tensor operations
+        enhanced_registry_base = self._registry_factory.create_for_context(
+            "tensor_operations", metric=metric
         )
         # Cast to EnhancedFieldRegistry for type safety
         if not isinstance(enhanced_registry_base, EnhancedFieldRegistry):
@@ -611,12 +611,9 @@ class PhaseIntegrator:
         if comp_type == "constraints":
             # Use Phase 1 constraint system
             if results.phase1_registry is None:
-                # Auto-detect context from constraint-related keywords
-                context = self._registry_factory.get_recommended_context(
-                    keywords=["constraints", "tensor_operations"]
-                )
+                # Create enhanced registry for constraint operations
                 enhanced_registry = self._registry_factory.create_for_context(
-                    context, metric=is_system.metric
+                    "tensor_operations", metric=is_system.metric
                 )
                 results.phase1_registry = enhanced_registry
 

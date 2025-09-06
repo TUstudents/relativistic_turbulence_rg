@@ -3260,11 +3260,11 @@ class TensorAwarePropagatorCalculator(PropagatorCalculator):
         """
         super().__init__(msrjd_action, metric, temperature)
 
-        # Enhanced components
+        # Enhanced components for tensor-aware propagator calculations
         self.projector = ProjectionOperators(metric)
-        from ..core.registry_factory import create_auto_registry
+        from ..core.registry_factory import create_registry_for_context
 
-        self.enhanced_registry = create_auto_registry(metric=metric)
+        self.enhanced_registry = create_registry_for_context("tensor_operations", metric=metric)
 
         # Default background four-velocity (rest frame)
         self.background_velocity = np.array([1.0, 0.0, 0.0, 0.0])

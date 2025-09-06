@@ -157,10 +157,10 @@ class IsraelStewartSystem:
         if not parameters.validate_causality():
             raise ValueError("Parameters violate causality constraints")
 
-        # Create field registry with all IS fields (auto-detects context from module)
-        from ..core.registry_factory import create_auto_registry
+        # Create field registry with all IS fields (basic physics context)
+        from ..core.registry_factory import create_registry_for_context
 
-        self.field_registry = create_auto_registry(metric=self.metric)
+        self.field_registry = create_registry_for_context("basic_physics", metric=self.metric)
 
         # Extract individual fields for convenience (these are guaranteed to exist after create_is_fields)
         self.rho: EnergyDensityField = cast(
