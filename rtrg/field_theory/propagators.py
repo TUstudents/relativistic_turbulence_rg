@@ -41,6 +41,7 @@ import numpy as np
 import sympy as sp
 from sympy import I, Matrix, pi, simplify, solve, symbols
 
+from ..core.calculators import PropagatorCalculatorBase
 from ..core.fields import EnhancedFieldRegistry, Field, TensorAwareField
 from ..core.tensors import (
     ConstrainedTensorField,
@@ -128,7 +129,7 @@ class PropagatorMatrix:
         )
 
 
-class PropagatorCalculator:
+class EnhancedPropagatorCalculator(PropagatorCalculatorBase):
     """
     Complete propagator calculator for Israel-Stewart field theory.
 
@@ -138,16 +139,15 @@ class PropagatorCalculator:
 
     def __init__(self, msrjd_action: MSRJDAction, metric: Metric, temperature: float = 1.0):
         """
-        Initialize propagator calculator.
+        Initialize enhanced propagator calculator.
 
         Args:
             msrjd_action: Complete MSRJD action with fields and equations
             metric: Metric tensor for geometric operations
             temperature: Temperature for FDT relations (in natural units)
         """
+        super().__init__(msrjd_action, metric, temperature)
         self.action = msrjd_action
-        self.metric = metric
-        self.temperature = temperature
         self.is_system = msrjd_action.is_system
         self.field_registry = msrjd_action.is_system.field_registry
 
@@ -3238,6 +3238,10 @@ class PropagatorCalculator:
 # ============================================================================
 
 # Phase 1 infrastructure - always available
+
+
+# Backward compatibility alias (defined early for inheritance)
+PropagatorCalculator = EnhancedPropagatorCalculator
 
 
 class TensorAwarePropagatorCalculator(PropagatorCalculator):

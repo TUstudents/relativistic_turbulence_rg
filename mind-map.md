@@ -13,6 +13,13 @@ This file provides a high-level, text-based mind map of the `rtrg` package, list
     - functions: `main`
   - core
     - __init__.py
+    - calculator_factory.py
+      - functions: `create_propagator_calculator`, `get_calculator_factory`
+      - classes: `CalculatorContext`, `CalculatorFactory`, `PropagatorCalculatorAdapter`
+    - calculator_implementations.py
+      - classes: `SimplePropagatorCalculator`, `EnhancedPropagatorCalculator`
+    - calculators.py
+      - classes: `CalculationType`, `CalculationResult`, `AbstractCalculator`, `ValidatorBase`, `PropagatorComponents`, `SpectralProperties`, `PropagatorMatrix`, `PropagatorCalculatorBase`
     - constants.py
       - classes: `PhysicalConstants`, `UnitSystem`
     - fields.py
@@ -42,9 +49,7 @@ This file provides a high-level, text-based mind map of the `rtrg` package, list
     - physics_validation.py
       - classes: `PhysicsValidationError`, `HydrodynamicModeAnalyzer`, `TransportCoefficientValidator`, `FluctuationDissipationValidator`, `PhysicsValidationSuite`
     - propagators.py
-      - classes: `PropagatorComponents`, `SpectralProperties`, `PropagatorMatrix`, `PropagatorCalculator`, `TensorAwarePropagatorCalculator`, `TensorPropagatorExtractor`
-    - propagators_simple.py
-      - classes: `PropagatorComponents`, `SpectralProperties`, `PropagatorMatrix`, `PropagatorCalculator`
+      - classes: `PropagatorComponents`, `SpectralProperties`, `PropagatorMatrix`, `EnhancedPropagatorCalculator`, `TensorAwarePropagatorCalculator`, `TensorPropagatorExtractor`
     - symbolic_tensors.py
       - classes: `TensorFieldProperties`, `SymbolicTensorField`, `TensorDerivative`, `IndexedFieldRegistry`
     - tensor_action_expander.py
@@ -91,6 +96,8 @@ This file provides a high-level, text-based mind map of the `rtrg` package, list
     - __init__.py
 
 <!-- END AUTO-GENERATED: MIND MAP -->
+
+
 
 
 

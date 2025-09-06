@@ -34,8 +34,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LogNorm
 
+from ..core.calculators import PropagatorCalculatorBase
 from ..core.fields import Field
-from ..field_theory.propagators import PropagatorCalculator
 
 
 class PropagatorVisualizer:
@@ -48,7 +48,7 @@ class PropagatorVisualizer:
 
     def __init__(
         self,
-        propagator_calc: PropagatorCalculator,
+        propagator_calc: PropagatorCalculatorBase,
         figsize: tuple[float, float] = (12, 8),
         dpi: int = 100,
     ):
@@ -584,7 +584,7 @@ class PropagatorVisualizer:
 
 
 def plot_propagator_overview(
-    calc: PropagatorCalculator, field1: Field, field2: Field, save_path: str | None = None
+    calc: PropagatorCalculatorBase, field1: Field, field2: Field, save_path: str | None = None
 ) -> plt.Figure:
     """
     Create a comprehensive overview plot for a specific propagator.
@@ -610,7 +610,7 @@ def plot_propagator_overview(
 
 
 def compare_propagator_types(
-    calc: PropagatorCalculator, field1: Field, field2: Field, k_fixed: float = 1.0
+    calc: PropagatorCalculatorBase, field1: Field, field2: Field, k_fixed: float = 1.0
 ) -> plt.Figure:
     """
     Compare retarded, advanced, and Keldysh propagators.

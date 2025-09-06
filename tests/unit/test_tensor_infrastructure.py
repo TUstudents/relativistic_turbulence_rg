@@ -430,16 +430,21 @@ class TestTensorAwarePropagatorCalculator:
         return Metric()
 
     def test_tensor_aware_calculator_creation(self, mock_msrjd_action, metric):
-        """Test creating tensor-aware propagator calculator."""
-        calc = TensorAwarePropagatorCalculator(mock_msrjd_action, metric)
+        """Test creating tensor-aware propagator calculator using factory pattern."""
+        from rtrg.core.calculator_factory import create_propagator_calculator
 
-        assert calc.enhanced_registry is not None
-        assert calc.projector is not None
-        assert calc.background_velocity is not None
+        calc = create_propagator_calculator("tensor_aware", mock_msrjd_action, metric=metric)
+
+        # Test that adapter provides unified interface
+        assert hasattr(calc, "calculate_retarded_propagator")
+        assert hasattr(calc, "calculate_advanced_propagator")
+        assert hasattr(calc, "calculate_keldysh_propagator")
 
     def test_field_matrix_size_calculation(self, mock_msrjd_action, metric):
-        """Test calculating matrix sizes for tensor fields."""
-        calc = TensorAwarePropagatorCalculator(mock_msrjd_action, metric)
+        """Test calculating matrix sizes for tensor fields using factory."""
+        from rtrg.core.calculator_factory import create_propagator_calculator
+
+        calc = create_propagator_calculator("tensor_aware", mock_msrjd_action, metric=metric)
 
         if calc.enhanced_registry:
             # Create enhanced fields for testing

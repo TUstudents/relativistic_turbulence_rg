@@ -90,8 +90,10 @@ def msrjd_action(is_system):
 
 @pytest.fixture
 def propagator_calculator(msrjd_action, metric):
-    """Create propagator calculator for testing."""
-    return PropagatorCalculator(msrjd_action, metric, temperature=1.0)
+    """Create propagator calculator for testing using factory pattern."""
+    from rtrg.core.calculator_factory import create_propagator_calculator
+
+    return create_propagator_calculator("enhanced", msrjd_action, metric=metric, temperature=1.0)
 
 
 class TestPropagatorComponents:
