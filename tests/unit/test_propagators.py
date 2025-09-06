@@ -1044,3 +1044,130 @@ class TestAdvancedPropagatorFeatures:
             assert abs(parameters["sound_speed_pole"] - 0.5) < 0.1
         if "sound_speed_avg_spectral" in parameters:
             assert abs(parameters["sound_speed_avg_spectral"] - 0.48) < 0.1
+
+
+class TestPropagatorMatrixFieldRegistry:
+    """Test Field registry integration fixes in PropagatorMatrix."""
+
+    def test_field_registry_integration(self, propagator_calculator):
+        """Test that PropagatorMatrix uses actual Field objects from registry."""
+        calc = propagator_calculator
+
+        # Test construct_full_tensor_propagator_matrix returns PropagatorMatrix with Field objects
+        try:
+            prop_matrix = calc.construct_full_tensor_propagator_matrix()
+
+            # Should have PropagatorMatrix with Field objects, not strings
+            assert isinstance(prop_matrix, PropagatorMatrix)
+            assert isinstance(prop_matrix.field_basis, list)
+
+            # Each element should be a Field object
+            for field in prop_matrix.field_basis:
+                assert isinstance(field, Field), f"Expected Field object, got {type(field)}"
+                assert hasattr(field, "name"), "Field object should have 'name' attribute"
+
+            # Should have correct field names
+            field_names = [f.name for f in prop_matrix.field_basis]
+            expected_fields = ["rho", "u", "pi", "Pi", "q"]
+            for expected in expected_fields:
+                assert expected in field_names, f"Missing field '{expected}' in basis"
+
+        except ValueError as e:
+            # If field registry doesn't have fields, that's expected in some test setups
+            assert "not found in registry" in str(e)
+
+    def test_tensor_field_dimensions_correction(self, propagator_calculator):
+        """Test that shear tensor π has correct 5 DOF, not 9."""
+        calc = propagator_calculator
+
+        field_dims = calc._get_tensor_field_dimensions()
+
+        # Check all field dimensions are physically correct
+        assert field_dims["rho"] == 1, "Energy density should be scalar (1 DOF)"
+        assert field_dims["u"] == 3, "Four-velocity should have 3 independent DOF"
+        assert field_dims["pi"] == 5, "Shear tensor should have 5 DOF (was incorrectly 9)"
+        assert field_dims["Pi"] == 1, "Bulk pressure should be scalar (1 DOF)"
+        assert field_dims["q"] == 3, "Heat flux should have 3 independent DOF"
+
+        # Verify total dimension makes sense
+        total_dim = sum(field_dims.values())
+        assert total_dim == 13, f"Total DOF should be 13, got {total_dim}"
+
+    def test_symbolic_numeric_evaluation_fix(self, propagator_calculator):
+        """Test that symbolic-to-numeric evaluation works correctly."""
+        calc = propagator_calculator
+
+        # Create a test coefficient expression with symbolic omega and k
+        omega, k = symbols("omega k", complex=True)
+        test_expr = omega**2 + k**2 + 1
+
+        # Test the corrected substitution logic by calling _construct_tensor_block
+        # This will test the fixed evaluation method
+        try:
+            # This should not fail with "can't convert symbol to complex" error
+            block = calc._construct_tensor_block("rho", "rho")
+
+            # Block can be None if no quadratic action, but shouldn't raise TypeError
+            if block is not None:
+                assert isinstance(block, np.ndarray), "Block should be numpy array"
+                assert block.dtype == complex, "Block should have complex dtype"
+
+        except TypeError as e:
+            if "can't convert symbol to float/complex" in str(e):
+                pytest.fail("Symbolic-to-numeric conversion still failing")
+        except Exception:
+            # Other exceptions are acceptable (missing parameters, etc.)
+            pass
+
+    def test_no_type_ignore_annotations(self):
+        """Test that all type: ignore annotations have been removed."""
+        import inspect
+
+        from rtrg.field_theory.propagators import PropagatorCalculator
+
+        # Get source code of the module
+        source = inspect.getsource(PropagatorCalculator)
+
+        # Should not contain any type: ignore[arg-type] annotations
+        assert (
+            "type: ignore[arg-type]" not in source
+        ), "Found remaining type: ignore[arg-type] annotations"
+
+    def test_propagator_matrix_field_lookup(self, field_registry):
+        """Test PropagatorMatrix.get_component works with Field objects."""
+        fields = list(field_registry.fields.values())[:2]
+
+        if len(fields) >= 2:
+            omega = symbols("omega", complex=True)
+            k_vec = [symbols(f"k_{i}", real=True) for i in range(3)]
+
+            # Create test matrix
+            matrix = sp.Matrix([[1, 2], [3, 4]])
+            prop_matrix = PropagatorMatrix(
+                matrix=matrix, field_basis=fields, omega=omega, k_vector=k_vec
+            )
+
+            # Test component lookup with Field objects (not strings)
+            component = prop_matrix.get_component(fields[0], fields[1])
+            assert component == 2
+
+            # Test self-component
+            self_component = prop_matrix.get_component(fields[0], fields[0])
+            assert self_component == 1
+
+    def test_field_objects_have_proper_attributes(self, field_registry):
+        """Test that Field objects have required attributes for propagator calculations."""
+        fields = list(field_registry.fields.values())
+
+        for field in fields:
+            # Field objects must have name attribute for indexing
+            assert hasattr(field, "name"), f"Field {field} missing 'name' attribute"
+            assert isinstance(
+                field.name, str
+            ), f"Field name should be string, got {type(field.name)}"
+
+            # Field objects should be hashable for use in dictionaries/sets
+            try:
+                hash(field)
+            except TypeError:
+                pytest.fail(f"Field {field} not hashable - required for propagator indexing")

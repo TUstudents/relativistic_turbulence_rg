@@ -38,13 +38,14 @@ References:
 
 import warnings
 from dataclasses import dataclass
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, cast
 
 import sympy as sp
 from sympy import Derivative, Function, IndexedBase, Matrix, Symbol, symbols
 
 from ..core.constants import PhysicalConstants
 from ..core.fields import EnhancedFieldRegistry, TensorAwareField
+from ..core.registry_factory import create_registry_for_context
 from ..core.tensors import Metric
 from ..israel_stewart.equations import IsraelStewartParameters, IsraelStewartSystem
 from .msrjd_action import ActionComponents, NoiseCorrelator
@@ -282,8 +283,9 @@ class TensorMSRJDAction:
             self.field_registry = self._create_symbolic_registry()
         else:
             # Create new symbolic registry with direct field creation
-            self.field_registry = IndexedFieldRegistry()
-            self._initialize_symbolic_fields()
+            self.field_registry = create_registry_for_context(
+                "symbolic_msrjd", coordinates=self.coordinates
+            )
 
         # Initialize noise correlator
         self.noise_correlator = TensorNoiseCorrelator(
@@ -302,7 +304,9 @@ class TensorMSRJDAction:
 
     def _create_symbolic_registry(self) -> IndexedFieldRegistry:
         """Create symbolic registry from Phase 1 enhanced registry."""
-        symbolic_registry = IndexedFieldRegistry()
+        symbolic_registry = create_registry_for_context(
+            "symbolic_msrjd", coordinates=self.coordinates
+        )
 
         # Convert Phase 1 fields to symbolic tensor fields
         if hasattr(self.is_system, "field_registry"):
@@ -314,9 +318,9 @@ class TensorMSRJDAction:
                     # Convert any Phase 1 field to symbolic tensor field
                     symbolic_field = self._convert_to_symbolic(field_name, phase1_field)
                     symbolic_registry.register_field(field_name, symbolic_field)
-                    symbolic_registry.create_antifield(field_name)
+                    cast(IndexedFieldRegistry, symbolic_registry).create_antifield(field_name)
 
-        return symbolic_registry
+        return cast(IndexedFieldRegistry, symbolic_registry)
 
     def _convert_to_symbolic(self, field_name: str, phase1_field: Any) -> SymbolicTensorField:
         """Convert Phase 1 TensorAwareField to SymbolicTensorField."""

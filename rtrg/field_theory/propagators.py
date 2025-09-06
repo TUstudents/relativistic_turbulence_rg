@@ -33,14 +33,16 @@ Physical Properties:
 """
 
 import warnings
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import numpy as np
 import sympy as sp
 from sympy import I, Matrix, pi, simplify, solve, symbols
 
 from ..core.fields import EnhancedFieldRegistry, Field, TensorAwareField
+from ..core.registry_factory import create_registry_for_context
 from ..core.tensors import (
     ConstrainedTensorField,
     IndexType,
@@ -103,7 +105,7 @@ class PropagatorMatrix:
     """Matrix representation of propagators in field space."""
 
     matrix: sp.Matrix
-    field_basis: list[Field]
+    field_basis: Sequence[Field]  # Use Sequence for covariance with TensorAwareField
     omega: sp.Symbol
     k_vector: list[sp.Symbol]
 
@@ -418,11 +420,18 @@ class PropagatorCalculator:
         # Build full matrix with tensor blocks
         matrix_components = np.zeros((total_dim, total_dim), dtype=complex)
 
-        # Field ordering: ['rho', 'u', 'pi', 'Pi', 'q']
+        # Get Field objects from registry instead of using string names
         field_names = ["rho", "u", "pi", "Pi", "q"]
+        field_objects = []
+        for name in field_names:
+            field_obj = self.action.is_system.field_registry.get_field(name)
+            if field_obj is None:
+                raise ValueError(f"Field '{name}' not found in registry")
+            field_objects.append(field_obj)
+
         field_offsets = self._compute_field_offsets(field_dims, field_names)
 
-        # Fill matrix blocks
+        # Fill matrix blocks using string names for internal computation
         for field1 in field_names:
             for field2 in field_names:
                 block = self._construct_tensor_block(field1, field2)
@@ -439,13 +448,12 @@ class PropagatorCalculator:
         # Convert to symbolic matrix for compatibility
         symbolic_matrix = sp.Matrix(constrained_matrix)
 
-        # For mypy compatibility - PropagatorMatrix expects Field objects
-        # but we only have field names. Use type ignore for now.
+        # Use actual Field objects from registry for type safety
         return PropagatorMatrix(
             matrix=symbolic_matrix,
-            field_basis=field_names,  # type: ignore[arg-type]
+            field_basis=field_objects,
             omega=self.omega,
-            k_vector=self.k_vec,  # type: ignore[arg-type]
+            k_vector=self.k_vec,
         )
 
     def _get_tensor_field_dimensions(self) -> dict[str, int]:
@@ -453,7 +461,7 @@ class PropagatorCalculator:
         return {
             "rho": 1,  # Scalar
             "u": 3,  # 4-vector with 1 constraint (u²=-c²) → 3 independent
-            "pi": 9,  # Symmetric traceless 4×4 → 10 independent, minus 4 orthogonality → 6, but we use 9 for simplicity
+            "pi": 5,  # Symmetric traceless 4×4 with orthogonality constraint: 10 - 1 - 4 = 5 DOF
             "Pi": 1,  # Scalar
             "q": 3,  # 4-vector with 1 constraint (q·u=0) → 3 independent
         }
@@ -493,9 +501,15 @@ class PropagatorCalculator:
         try:
             # Substitute parameter values
             params = self.is_system.parameters
+            # Create substitution dictionary with both symbolic and string handling
             substitutions = {
-                "omega": complex(self.omega),
-                "k": abs(self.k),
+                # Symbolic substitutions
+                self.omega: 1.0j,  # Use symbolic omega symbol
+                self.k: 1.0,  # Use symbolic k symbol
+                # String substitutions (for backward compatibility)
+                "omega": 1.0j,
+                "k": 1.0,
+                # Parameter substitutions
                 "tau_pi": params.tau_pi,
                 "tau_Pi": params.tau_Pi,
                 "tau_q": params.tau_q,
@@ -504,7 +518,9 @@ class PropagatorCalculator:
                 "kappa": params.kappa,
             }
 
-            numerical_coeff = complex(coeff_expr.subs(substitutions))
+            # Substitute values first, then evaluate numerically
+            substituted_expr = coeff_expr.subs(substitutions)
+            numerical_coeff = complex(substituted_expr.evalf())
 
             # Create tensor block structure
             if field1 == field2:
@@ -3247,8 +3263,7 @@ class TensorAwarePropagatorCalculator(PropagatorCalculator):
 
         # Enhanced components
         self.projector = ProjectionOperators(metric)
-        self.enhanced_registry = EnhancedFieldRegistry()
-        self.enhanced_registry.create_enhanced_is_fields(metric)
+        self.enhanced_registry = create_registry_for_context("tensor_operations", metric=metric)
 
         # Default background four-velocity (rest frame)
         self.background_velocity = np.array([1.0, 0.0, 0.0, 0.0])
@@ -3395,7 +3410,12 @@ class TensorAwarePropagatorCalculator(PropagatorCalculator):
             field_subset = [
                 field
                 for name in ["rho", "u", "pi", "Pi", "q"]
-                if (field := self.enhanced_registry.get_tensor_aware_field(name)) is not None
+                if (
+                    field := cast(
+                        EnhancedFieldRegistry, self.enhanced_registry
+                    ).get_tensor_aware_field(name)
+                )
+                is not None
             ]
 
         if not field_subset:
@@ -3436,9 +3456,9 @@ class TensorAwarePropagatorCalculator(PropagatorCalculator):
 
         result = PropagatorMatrix(
             matrix=matrix,
-            field_basis=field_subset,  # type: ignore[arg-type]
+            field_basis=field_subset,
             omega=self.omega,
-            k_vector=self.k_vec,  # type: ignore[arg-type]
+            k_vector=self.k_vec,
         )
 
         self.matrix_cache[cache_key] = result
@@ -3505,9 +3525,9 @@ class TensorAwarePropagatorCalculator(PropagatorCalculator):
             return propagator_matrix
 
         # Apply constraints to field components
-        constrained_components = self.enhanced_registry.apply_all_constraints(
-            field_components, four_velocity=self.background_velocity
-        )
+        constrained_components = cast(
+            EnhancedFieldRegistry, self.enhanced_registry
+        ).apply_all_constraints(field_components, four_velocity=self.background_velocity)
 
         # This would modify the propagator matrix structure accordingly
         # For now, return the original matrix

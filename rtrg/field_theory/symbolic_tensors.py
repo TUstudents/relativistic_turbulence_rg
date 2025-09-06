@@ -44,6 +44,8 @@ import sympy as sp
 from sympy import Derivative, Function, IndexedBase, Symbol, symbols
 from sympy.core.function import UndefinedFunction
 
+from ..core.registry_base import AbstractFieldRegistry
+
 try:
     from sympy.tensor import TensorHead, TensorSymmetry
     from sympy.tensor.tensor import TensAdd, TensMul
@@ -609,7 +611,7 @@ class TensorDerivative(Derivative):
             return f"∂_{{{self._coordinate}}} {self._tensor_expr}"
 
 
-class IndexedFieldRegistry:
+class IndexedFieldRegistry(AbstractFieldRegistry[SymbolicTensorField]):
     """
     Registry for managing symbolic tensor fields in MSRJD calculations.
 
@@ -640,6 +642,7 @@ class IndexedFieldRegistry:
 
     def __init__(self) -> None:
         """Initialize empty field registry."""
+        super().__init__()
         self._fields: dict[str, SymbolicTensorField] = {}
         self._antifields: dict[str, SymbolicTensorField] = {}
         self._field_relationships: dict[str, list[str]] = {}
@@ -710,6 +713,10 @@ class IndexedFieldRegistry:
     def get_all_fields(self) -> dict[str, SymbolicTensorField]:
         """Get all registered fields."""
         return self._fields.copy()
+
+    def list_field_names(self) -> list[str]:
+        """Get list of all field names."""
+        return list(self._fields.keys())
 
     def get_all_antifields(self) -> dict[str, SymbolicTensorField]:
         """Get all registered antifields."""

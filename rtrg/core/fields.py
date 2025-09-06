@@ -37,12 +37,13 @@ References:
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import sympy as sp
 
 from .constants import PhysicalConstants
+from .registry_base import AbstractFieldRegistry
 from .tensors import (
     ConstrainedTensorField,
     IndexStructure,
@@ -457,14 +458,14 @@ class Field(ABC):
             except ValueError:
                 # Fallback to coordinate trace if metric trace fails
                 trace = tensor.trace()
-                if isinstance(trace, (int, float, complex)):
+                if isinstance(trace, int | float | complex):
                     return abs(trace) < 1e-12
                 # trace is a tensor object, check components
                 return np.allclose(trace.components, 0, atol=1e-12)  # type: ignore[unreachable]
 
         # For higher rank tensors, use existing logic
         trace = tensor.trace()
-        if isinstance(trace, (int, float, complex)):
+        if isinstance(trace, int | float | complex):
             return abs(trace) < 1e-12
         # trace is a tensor object, check components
         return np.allclose(trace.components, 0, atol=1e-12)  # type: ignore[unreachable]
@@ -787,11 +788,12 @@ class HeatFluxField(Field):
         return evolution
 
 
-class FieldRegistry:
+class FieldRegistry(AbstractFieldRegistry[Field]):
     """Registry to manage all fields in the theory"""
 
     def __init__(self) -> None:
         """Initialize empty field registry"""
+        super().__init__()
         self.fields: dict[str, Field] = {}
         self.response_fields: dict[str, ResponseField] = {}
 
@@ -820,6 +822,18 @@ class FieldRegistry:
     def get_response_field(self, name: str) -> ResponseField | None:
         """Get response field by name"""
         return self.response_fields.get(name)
+
+    def get_all_fields(self) -> dict[str, Field]:
+        """Get all registered fields."""
+        return self.fields.copy()
+
+    def field_count(self) -> int:
+        """Get total number of registered fields."""
+        return len(self.fields)
+
+    def list_field_names(self) -> list[str]:
+        """Get list of all field names."""
+        return list(self.fields.keys())
 
     def list_fields(self) -> list[str]:
         """List all registered field names"""
