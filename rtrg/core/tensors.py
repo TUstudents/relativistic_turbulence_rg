@@ -112,26 +112,33 @@ class Metric:
         return np.linalg.inv(self.g)
 
     def contract(self, tensor: np.ndarray, indices: list[int]) -> np.ndarray:
-        """Contract tensor indices with metric"""
+        """Contract two tensor axes with the metric g_{μν}.
+
+        This reduces the tensor rank by 2. The two axes in ``indices`` are
+        contracted against the metric's two indices. The order of ``indices``
+        is irrelevant.
+        """
         if len(indices) != 2:
             raise ValueError("Metric contraction requires exactly 2 indices")
 
-        # Use Einstein summation convention
-        einsum_string = self._build_einsum_string(tensor.shape, indices)
-        return np.einsum(einsum_string, self.g, tensor)  # type: ignore[no-any-return]
+        i, j = sorted(indices)
+        # Bring the chosen axes to the front so we can tensordot with g over [0,1]
+        t = np.moveaxis(tensor, (i, j), (0, 1))
+        out = np.tensordot(self.g, t, axes=([0, 1], [0, 1]))
+        return out
 
     def raise_index(self, tensor: np.ndarray, position: int) -> np.ndarray:
-        """Raise index using inverse metric g^μν"""
-        g_inv = np.linalg.inv(self.g)
-        axes = list(range(tensor.ndim))
-        axes = [position] + [ax for ax in axes if ax != position]
-        return np.tensordot(g_inv, tensor.transpose(axes), axes=([1], [0]))
+        """Raise one index at ``position`` using g^{μν} and keep axis order."""
+        g_inv = self.g_inv
+        t = np.moveaxis(tensor, position, 0)
+        r = np.tensordot(g_inv, t, axes=([1], [0]))
+        return np.moveaxis(r, 0, position)
 
     def lower_index(self, tensor: np.ndarray, position: int) -> np.ndarray:
-        """Lower index using metric g_μν"""
-        axes = list(range(tensor.ndim))
-        axes = [position] + [ax for ax in axes if ax != position]
-        return np.tensordot(self.g, tensor.transpose(axes), axes=([1], [0]))
+        """Lower one index at ``position`` using g_{μν} and keep axis order."""
+        t = np.moveaxis(tensor, position, 0)
+        r = np.tensordot(self.g, t, axes=([1], [0]))
+        return np.moveaxis(r, 0, position)
 
     def _build_einsum_string(self, shape: tuple, indices: list[int]) -> str:
         """Build einsum string for tensor contractions"""
@@ -1005,43 +1012,38 @@ class LorentzTensor:
         return LorentzTensor(projector_components, proj_indices, self.metric)
 
     def create_longitudinal_projector(self, momentum: "LorentzTensor") -> "LorentzTensor":
-        """
-        Create longitudinal projection operator for momentum decomposition.
+        """Create longitudinal projector along a **spatial** momentum direction.
 
-        Projects tensor fields along momentum direction:
-        P_L^μν = k^μk^ν/k²
-
-        Args:
-            momentum: Momentum vector k^μ
-
-        Returns:
-            Longitudinal projector as rank-2 tensor
+        For general 4-momentum this construction is ill-defined in Minkowski space
+        (k^2 can be ≤ 0). We therefore only allow purely spatial momenta (k^0≈0).
+        Use a 3D Euclidean projector otherwise.
         """
         if momentum.rank != 1:
             raise ValueError("Momentum must be a vector")
 
-        # Calculate k² = k^μk_μ
-        k_lower = momentum.lower_index(0)
-        k_squared = momentum.contract(k_lower, [(0, 0)])
-        if isinstance(k_squared, LorentzTensor):
-            raise ValueError("Vector contraction should return scalar, got tensor")
-        k_sq_val = k_squared
+        # Treat as spatial-only if time component is ~0; otherwise disallow
+        k = momentum.components
+        if abs(k[0]) > 1e-12:
+            raise ValueError(
+                "Longitudinal projector expects spatial momentum (k^0≈0). Use ProjectionOperators.longitudinal_projector for 3D vectors."
+            )
 
-        if abs(k_sq_val) < 1e-14:
-            raise ValueError("Cannot create longitudinal projector for zero momentum")
-
-        # Create k^μk^ν/k² projector
-        k_outer = np.outer(momentum.components, momentum.components)
-        projector_components = k_outer / k_sq_val
-
-        # Create index structure
+        k_spatial = k[1:]
+        k2 = float(k_spatial @ k_spatial)
+        if k2 < 1e-14:
+            raise ValueError("Cannot create longitudinal projector for zero spatial momentum")
+        k_outer = np.outer(k_spatial, k_spatial)
+        P_L_3d = k_outer / k2
+        # Embed back into 4D contravariant form with zeros in time rows/cols
+        D = self.metric.dim
+        proj = np.zeros((D, D), dtype=self.components.dtype)
+        proj[1:, 1:] = P_L_3d
         proj_indices = IndexStructure(
             names=["mu", "nu"],
             types=["contravariant", "contravariant"],
             symmetries=["symmetric", "symmetric"],
         )
-
-        return LorentzTensor(projector_components, proj_indices, self.metric)
+        return LorentzTensor(proj, proj_indices, self.metric)
 
     def create_transverse_projector(
         self, velocity: "LorentzTensor", momentum: "LorentzTensor"
@@ -1124,18 +1126,10 @@ class LorentzTensor:
             - (2.0 / 3.0) * trace_val * long_proj.components
         )
 
-        # Tensor mode: transverse traceless part
-        # T_tensor^μν = P_T^μρ P_T^νσ T_ρσ
-        tensor_components = np.zeros_like(self.components)
-        for mu in range(self.metric.dim):
-            for nu in range(self.metric.dim):
-                for rho in range(self.metric.dim):
-                    for sigma in range(self.metric.dim):
-                        tensor_components[mu, nu] += (
-                            trans_proj.components[mu, rho]
-                            * trans_proj.components[nu, sigma]
-                            * self.components[rho, sigma]
-                        )
+        # Tensor mode via einsum: T_tensor^{μν} = P_T^{μρ} P_T^{νσ} T_{ρσ}
+        tensor_components = np.einsum(
+            'mr,ns,rs->mn', trans_proj.components, trans_proj.components, self.components
+        )
 
         # Create tensors with same index structure
         modes = {
@@ -1177,31 +1171,27 @@ class LorentzTensor:
     def _apply_projector_einsum(
         self, tensor_components: np.ndarray, projector: np.ndarray, index_pos: int
     ) -> np.ndarray:
-        """Apply projector to specific index using einsum."""
-        # Create einsum subscription strings
-        dim = tensor_components.ndim
-        tensor_indices = list(range(dim))
-        proj_indices = [dim, tensor_indices[index_pos]]
+        """Apply projector to a specific index using safe axis moves.
 
-        # Modify tensor indices to use projected index
-        tensor_indices[index_pos] = dim
-
-        # Create einsum string
-        tensor_str = "".join(chr(ord("a") + i) for i in tensor_indices)
-        proj_str = chr(ord("a") + dim) + chr(ord("a") + proj_indices[1])
-        result_str = "".join(chr(ord("a") + i) for i in range(dim) if i != index_pos) + chr(
-            ord("a") + dim
-        )
-
-        einsum_str = f"{tensor_str},{proj_str}->{result_str}"
-
-        return np.einsum(einsum_str, tensor_components, projector)  # type: ignore[no-any-return]
+        This uses ``np.moveaxis`` + ``np.tensordot`` to avoid fragile einsum
+        string construction and preserves the original axis order.
+        """
+        t = np.moveaxis(tensor_components, index_pos, 0)
+        # projector is assumed mixed: P^{μ}{}_{ν}; contract ν (axis 1) with tensor axis 0
+        r = np.tensordot(projector, t, axes=([1], [0]))
+        return np.moveaxis(r, 0, index_pos)
 
     def _build_contraction_einsum(
         self, other: "LorentzTensor", index_pairs: list[tuple[int, int]]
     ) -> str:
         """Build Einstein summation string for tensor contraction"""
         # This is a simplified version - full implementation would be more sophisticated
+        import warnings
+        warnings.warn(
+            "_build_contraction_einsum is deprecated; prefer explicit moveaxis+tensordot in linalg.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
         # Assign letters to indices
@@ -1823,7 +1813,7 @@ class ConstrainedTensorField:
     def __init__(
         self,
         name: str,
-        index_structure: TensorIndexStructure,
+        index_structure: IndexStructure,
         metric: Metric,
         constraints: list[str] | None = None,
     ):
@@ -1884,12 +1874,20 @@ class ConstrainedTensorField:
         return components  # type: ignore[no-any-return]
 
     def _apply_traceless(self, components: np.ndarray) -> np.ndarray:
-        """Apply traceless constraint."""
-        if len(components.shape) == 2:
-            trace = np.trace(components)
-            dim = components.shape[0]
-            return components - (trace / dim) * np.eye(dim)  # type: ignore[no-any-return]
-        return components  # type: ignore[no-any-return]
+        """Apply traceless constraint (metric-aware).
+
+        Assumes a contravariant rank-2 tensor by default (common for π^{μν}).
+        If you need covariant, switch to contracting with g^{μν} and subtracting
+        against g_{μν}.
+        """
+        if components.ndim == 2:
+            g = self.metric.g
+            g_inv = self.metric.g_inv
+            # metric-aware trace: tr = g_{μν} T^{μν} for contravariant T
+            tr = float(np.einsum('mn,mn->', g, components))
+            D = components.shape[0]
+            return components - (tr / D) * g_inv
+        return components
 
     def _apply_velocity_orthogonality(
         self, components: np.ndarray, velocity: np.ndarray
@@ -1972,12 +1970,12 @@ class ProjectionOperators:
         Returns:
             Spatial projector h^μν as 4×4 array
         """
+        # Include explicit c factor to avoid unit drift: h^{μν} = g^{μν} + u^{μ}u^{ν}/c^2
+        from .constants import PhysicalConstants
+        c2 = PhysicalConstants.c ** 2
         g_inv = np.linalg.inv(self.metric.g)
         u_outer = np.outer(four_velocity, four_velocity)
-
-        # In natural units c = 1, so h^μν = g^μν + u^μu^ν
-        h_projector = g_inv + u_outer
-
+        h_projector = g_inv + u_outer / c2
         return h_projector
 
     def longitudinal_projector(self, momentum: np.ndarray) -> np.ndarray:
