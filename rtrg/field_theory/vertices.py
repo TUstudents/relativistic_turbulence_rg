@@ -572,17 +572,22 @@ class VertexExtractor:
         if self._vertex_cache is not None:
             return self._vertex_cache
 
-        # Expand action to quartic order
-        expansion = self.expand_action_around_background(max_order=4)
+        # Get action components
+        action_components = self.action.construct_total_action()
+        deterministic_action = action_components.deterministic
 
-        # Extract vertices by order
-        cubic_vertices = self._extract_vertices_from_expansion(expansion[3], order=3)
-        quartic_vertices = self._extract_vertices_from_expansion(expansion[4], order=4)
+        # Use specialized physics-based extraction methods instead of generic expansion
+        cubic_action = self._extract_cubic_terms_from_action(deterministic_action)
+        quartic_action = self._extract_quartic_terms_from_action(deterministic_action)
+
+        # Extract vertices from specialized terms
+        cubic_vertices = self._extract_vertices_from_expansion(cubic_action, order=3)
+        quartic_vertices = self._extract_vertices_from_expansion(quartic_action, order=4)
 
         # Extract constraint vertices (from Lagrange multiplier terms)
         constraint_vertices = self._extract_constraint_vertices()
 
-        # Build catalog
+        # Build catalog (post_init will populate vertex_types, coupling_constants, total_vertices)
         catalog = VertexCatalog(
             three_point=cubic_vertices,
             four_point=quartic_vertices,
@@ -637,8 +642,26 @@ class VertexExtractor:
             try:
                 vertex = self._analyze_term_for_vertex(term, order)
                 if vertex and vertex.validate_consistency():
+                    # Create a more specific key to avoid overwriting different physics processes
                     field_signature = vertex.fields
-                    vertices[field_signature] = vertex
+                    # Include vertex type and key parts of the expression to make unique key
+                    coupling_info = (
+                        str(sorted(vertex.coupling_constants))
+                        if vertex.coupling_constants
+                        else "no_coupling"
+                    )
+                    derivative_info = (
+                        "derivatives"
+                        if "Derivative" in str(vertex.coupling_expression)
+                        else "no_derivatives"
+                    )
+                    unique_key = (
+                        *field_signature,
+                        vertex.vertex_type,
+                        coupling_info,
+                        derivative_info,
+                    )
+                    vertices[unique_key] = vertex
             except Exception:
                 # Skip problematic terms
                 continue
@@ -661,14 +684,50 @@ class VertexExtractor:
             fields_in_term = []
             field_indices: dict[str, list[Any]] = defaultdict(list)
 
-            # Find all field symbols in the term
+            # Find all field symbols in the term - handle IndexedBase and Functions properly
+            term_atoms = term.atoms(sp.Function, sp.IndexedBase, sp.Indexed)
+
+            for atom in term_atoms:
+                if isinstance(atom, sp.Function | sp.IndexedBase):
+                    atom_name = str(atom.func) if hasattr(atom, "func") else str(atom)
+                    # Check if it's a field we recognize
+                    for field_name in self.physical_fields + self.response_fields:
+                        if field_name in atom_name or atom_name.startswith(field_name):
+                            if field_name not in fields_in_term:
+                                fields_in_term.append(field_name)
+                            # Initialize field_indices entry if not exists
+                            if field_name not in field_indices:
+                                field_indices[field_name] = []
+                            break
+                elif isinstance(atom, sp.Indexed):
+                    # Handle indexed expressions like u[mu], pi[mu,nu]
+                    base_name = str(atom.base)
+                    for field_name in self.physical_fields + self.response_fields:
+                        if field_name in base_name or base_name.startswith(field_name):
+                            if field_name not in fields_in_term:
+                                fields_in_term.append(field_name)
+                            # Extract and store indices
+                            if field_name not in field_indices:
+                                field_indices[field_name] = []
+                            # Add indices from this specific occurrence
+                            if hasattr(atom, "indices") and atom.indices:
+                                for idx in atom.indices:
+                                    if str(idx) not in [
+                                        str(existing) for existing in field_indices[field_name]
+                                    ]:
+                                        field_indices[field_name].append(str(idx))
+                            break
+
+            # Also check free symbols as fallback
             for symbol in term.free_symbols:
                 symbol_str = str(symbol)
-
-                # Check if it's a field we recognize
                 for field_name in self.physical_fields + self.response_fields:
                     if field_name in symbol_str:
-                        fields_in_term.append(field_name)
+                        if field_name not in fields_in_term:
+                            fields_in_term.append(field_name)
+                        # Initialize field_indices entry if not exists
+                        if field_name not in field_indices:
+                            field_indices[field_name] = []
                         break
 
             # Remove duplicates while preserving order
@@ -677,8 +736,8 @@ class VertexExtractor:
                 if field not in unique_fields:
                     unique_fields.append(field)
 
-            # Check if we have the right number of fields for this order
-            if len(unique_fields) != order:
+            # Check if we have reasonable number of fields (more flexible for Israel-Stewart theory)
+            if len(unique_fields) < 2 or len(unique_fields) > order + 2:
                 return None
 
             # Extract coupling constants
@@ -701,20 +760,22 @@ class VertexExtractor:
             symmetry_factor = self._calculate_symmetry_factor(unique_fields)
 
             # Create vertex structure
-            vertex = VertexStructure(
-                fields=tuple(unique_fields),
-                field_indices=dict(field_indices),
-                coupling_expression=term,
-                tensor_structure=self._describe_tensor_structure(term),
-                coupling_constants=coupling_constants,
-                mass_dimension=self._calculate_mass_dimension(unique_fields, term),
-                derivative_structure=self._extract_derivative_structure(term),
-                momentum_factors=self._convert_to_momentum_space(term),
-                symmetry_factor=symmetry_factor,
-                vertex_type=vertex_type,
-            )
-
-            return vertex
+            try:
+                vertex = VertexStructure(
+                    fields=tuple(unique_fields),
+                    field_indices=dict(field_indices),
+                    coupling_expression=term,
+                    tensor_structure=self._describe_tensor_structure(term),
+                    coupling_constants=coupling_constants,
+                    mass_dimension=self._calculate_mass_dimension(unique_fields, term),
+                    derivative_structure=self._extract_derivative_structure(term),
+                    momentum_factors=self._convert_to_momentum_space(term),
+                    symmetry_factor=symmetry_factor,
+                    vertex_type=vertex_type,
+                )
+                return vertex
+            except Exception:
+                return None
 
         except Exception:
             # If analysis fails, skip this term

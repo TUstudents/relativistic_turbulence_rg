@@ -211,13 +211,27 @@ def test_system_summary_generation():
     # Add some test vertices
     test_three_point = {}
     for i, fields in enumerate([("rho", "u"), ("pi", "u"), ("q", "rho")]):
+        # Define appropriate field indices for each field type
+        field_indices = {}
+        for field in fields:
+            if field == "rho" or field == "Pi":  # Scalar fields
+                field_indices[field] = []
+            elif field == "u" or field == "q":  # 4-vectors
+                field_indices[field] = ["mu"]
+            elif field == "pi":  # Rank-2 tensor
+                field_indices[field] = ["mu", "nu"]
+            else:
+                field_indices[field] = []  # Default to scalar
+
         vertex = VertexStructure(
             fields=fields,
+            field_indices=field_indices,
             vertex_type=f"test_type_{i}",
-            coupling_constants=[parameters.eta],
+            coupling_constants={parameters.eta},
             coupling_expression=parameters.eta * sp.Symbol("test"),
             tensor_structure="test structure",
             mass_dimension=4.0,
+            momentum_factors=sp.sympify(1),
             symmetry_factor=1.0,
             derivative_structure={},
         )
@@ -276,13 +290,27 @@ def test_complete_basic_integration():
     ]
 
     for fields, vertex_type, description in test_vertices:
+        # Define appropriate field indices for each field type
+        field_indices = {}
+        for field in fields:
+            if field == "rho" or field == "Pi":  # Scalar fields
+                field_indices[field] = []
+            elif field == "u" or field == "q":  # 4-vectors
+                field_indices[field] = ["mu"]
+            elif field == "pi":  # Rank-2 tensor
+                field_indices[field] = ["mu", "nu"]
+            else:
+                field_indices[field] = []  # Default to scalar
+
         vertex = VertexStructure(
             fields=fields,
+            field_indices=field_indices,
             vertex_type=vertex_type,
-            coupling_constants=[parameters.eta],
+            coupling_constants={parameters.eta},
             coupling_expression=parameters.eta * sp.prod([sp.Symbol(f) for f in fields]),
             tensor_structure=description,
             mass_dimension=4.0,
+            momentum_factors=sp.sympify(1),
             symmetry_factor=1.0,
             derivative_structure={field: 0 for field in fields},
         )

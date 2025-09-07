@@ -27,7 +27,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-BEGIN_MARKER = "<!-- BEGIN AUTO-GENERATED: MIND MAP -->"
+BEGIN_MARKER = "<!-- BEGIN AUTO-GENERATED: MIND MAP -->\n"
 END_MARKER = "<!-- END AUTO-GENERATED: MIND MAP -->"
 
 
@@ -173,7 +173,6 @@ def generate_mind_map_block(
 
     lines.append("")
     lines.append(END_MARKER)
-    lines.append("")
     return "\n".join(lines)
 
 
